@@ -8,8 +8,9 @@ use windows_sys::Win32::Graphics::Gdi::{
     SetStretchBltMode, StretchBlt,
 };
 use windows_sys::Win32::System::DataExchange::{
-    CF_BITMAP, CloseClipboard, EmptyClipboard, OpenClipboard, SetClipboardData,
+    CloseClipboard, EmptyClipboard, OpenClipboard, SetClipboardData,
 };
+use windows_sys::Win32::System::Ole::CF_BITMAP;
 use windows_sys::Win32::UI::WindowsAndMessaging::{CopyImage, IMAGE_BITMAP, LR_CREATEDIBSECTION};
 
 use crate::geometry::RectI;
