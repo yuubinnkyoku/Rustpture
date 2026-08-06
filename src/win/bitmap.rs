@@ -119,7 +119,7 @@ impl CapturedBitmap {
 
         let result = if EmptyClipboard() == 0 {
             Err(io::Error::last_os_error())
-        } else if SetClipboardData(CF_BITMAP, copy).is_null() {
+        } else if SetClipboardData(u32::from(CF_BITMAP), copy).is_null() {
             Err(io::Error::last_os_error())
         } else {
             Ok(())
