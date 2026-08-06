@@ -1,0 +1,77 @@
+name: Add title bar once
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Add a native title bar to pinned image windows
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path("src/win/pin.rs")
+          text = path.read_text(encoding="utf-8")
+
+          def replace_once(old: str, new: str) -> None:
+              global text
+              if text.count(old) != 1:
+                  raise RuntimeError(f"Expected exactly one match, found {text.count(old)}: {old[:80]!r}")
+              text = text.replace(old, new, 1)
+
+          replace_once(
+              "    CS_DBLCLKS, CreateWindowExW, DefWindowProcW, DestroyWindow, GWLP_USERDATA, GetClientRect,\n",
+              "    AdjustWindowRectEx, CS_DBLCLKS, CreateWindowExW, DefWindowProcW, DestroyWindow,\n    GWLP_USERDATA, GetClientRect,\n",
+          )
+          replace_once(
+              "    WS_EX_LAYERED, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,\n",
+              "    WS_CAPTION, WS_EX_LAYERED, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_SYSMENU,\n",
+          )
+          replace_once(
+              "const MIN_OPACITY: u8 = 32;\n",
+              "const MIN_OPACITY: u8 = 32;\nconst PIN_WINDOW_STYLE: u32 = WS_CAPTION | WS_SYSMENU;\nconst PIN_WINDOW_EX_STYLE: u32 = WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_TOPMOST;\n",
+          )
+          replace_once(
+              "    let title = wide_null(\"Rustpture image\");\n    let window = CreateWindowExW(\n        WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_TOPMOST,\n",
+              "    let title = wide_null(\"Rustpture image\");\n    let (window_width, window_height) =\n        window_size_for_client(bitmap.width(), bitmap.height());\n    let window = CreateWindowExW(\n        PIN_WINDOW_EX_STYLE,\n",
+          )
+          replace_once(
+              "        WS_POPUP,\n        capture_rect.left,\n        capture_rect.top,\n        bitmap.width(),\n        bitmap.height(),\n",
+              "        PIN_WINDOW_STYLE,\n        capture_rect.left,\n        capture_rect.top,\n        window_width,\n        window_height,\n",
+          )
+          replace_once(
+              "        capture_rect.width(),\n        capture_rect.height(),\n        SWP_NOACTIVATE | SWP_SHOWWINDOW,\n",
+              "        window_width,\n        window_height,\n        SWP_NOACTIVATE | SWP_SHOWWINDOW,\n",
+          )
+          replace_once(
+              "    UpdateWindow(window);\n    Ok(window)\n}\n\nunsafe fn state_ptr(window: HWND) -> *mut PinState {\n",
+              "    UpdateWindow(window);\n    Ok(window)\n}\n\nunsafe fn window_size_for_client(width: i32, height: i32) -> (i32, i32) {\n    let client_width = width.max(1);\n    let client_height = height.max(1);\n    let mut rect = RECT {\n        left: 0,\n        top: 0,\n        right: client_width,\n        bottom: client_height,\n    };\n\n    if AdjustWindowRectEx(\n        &mut rect,\n        PIN_WINDOW_STYLE,\n        0,\n        PIN_WINDOW_EX_STYLE,\n    ) == 0\n    {\n        return (client_width, client_height);\n    }\n\n    (rect.right - rect.left, rect.bottom - rect.top)\n}\n\nunsafe fn window_frame_size() -> (i32, i32) {\n    let (width, height) = window_size_for_client(1, 1);\n    (width - 1, height - 1)\n}\n\nunsafe fn state_ptr(window: HWND) -> *mut PinState {\n",
+          )
+          replace_once(
+              "    let width = scaled_dimension((*pointer).bitmap.width(), scale);\n    let height = scaled_dimension((*pointer).bitmap.height(), scale);\n    let origin = zoom_around_point(old, anchor, width, height);\n",
+              "    let client_width = scaled_dimension((*pointer).bitmap.width(), scale);\n    let client_height = scaled_dimension((*pointer).bitmap.height(), scale);\n    let (width, height) = window_size_for_client(client_width, client_height);\n    let origin = zoom_around_point(old, anchor, width, height);\n",
+          )
+          replace_once(
+              "    let scale = (available_width as f64 / source_width as f64)\n        .min(available_height as f64 / source_height as f64)\n        .clamp(MIN_SCALE, MAX_SCALE);\n    let width = scaled_dimension(source_width, scale);\n    let height = scaled_dimension(source_height, scale);\n    let x = info.rcWork.left + (available_width - width) / 2;\n    let y = info.rcWork.top + (available_height - height) / 2;\n",
+              "    let (frame_width, frame_height) = window_frame_size();\n    let available_client_width = (available_width - frame_width).max(1);\n    let available_client_height = (available_height - frame_height).max(1);\n    let scale = (available_client_width as f64 / source_width as f64)\n        .min(available_client_height as f64 / source_height as f64)\n        .clamp(MIN_SCALE, MAX_SCALE);\n    let client_width = scaled_dimension(source_width, scale);\n    let client_height = scaled_dimension(source_height, scale);\n    let (width, height) = window_size_for_client(client_width, client_height);\n    let x = info.rcWork.left + (available_width - width) / 2;\n    let y = info.rcWork.top + (available_height - height) / 2;\n",
+          )
+
+          path.write_text(text, encoding="utf-8")
+
+      - name: Commit the update and remove this one-time workflow
+        shell: bash
+        run: |
+          git rm .github/workflows/add-titlebar-once.yml
+          git add src/win/pin.rs
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Add title bar to pinned image windows"
+          git push
