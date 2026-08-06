@@ -20,8 +20,11 @@ struct ControllerState {
     overlay: HWND,
 }
 
+#[allow(clippy::manual_dangling_ptr)]
 pub unsafe fn register_class(instance: HINSTANCE) -> io::Result<()> {
     let class_name = wide_null(CONTROLLER_CLASS);
+    // Win32's MAKEINTRESOURCEW convention encodes a numeric resource ID
+    // in a pointer value; the pointer is never dereferenced.
     let embedded_icon = LoadIconW(instance, 1usize as *const u16);
     let icon = if embedded_icon.is_null() {
         LoadIconW(null_mut(), IDI_APPLICATION)

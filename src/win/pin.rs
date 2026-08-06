@@ -265,7 +265,7 @@ unsafe fn handle_mouse_wheel(window: HWND, wparam: WPARAM) {
     }
     let key_state = (wparam & 0xffff) as u32;
 
-    if key_state & (MK_CONTROL as u32) != 0 {
+    if key_state & MK_CONTROL != 0 {
         let pointer = state_ptr(window);
         if !pointer.is_null() {
             let change = ((delta as f64 / 120.0) * 16.0).round() as i32;
