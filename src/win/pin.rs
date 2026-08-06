@@ -10,14 +10,15 @@ use windows_sys::Win32::Graphics::Gdi::{
 use windows_sys::Win32::System::SystemServices::MK_CONTROL;
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{ReleaseCapture, SetCapture};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    CS_DBLCLKS, CreateWindowExW, DefWindowProcW, DestroyWindow, GWLP_USERDATA, GetClientRect,
+    AdjustWindowRectEx, CS_DBLCLKS, CreateWindowExW, DefWindowProcW, DestroyWindow,
+    GWLP_USERDATA, GetClientRect,
     GetCursorPos, GetWindowLongPtrW, GetWindowRect, HWND_NOTOPMOST, HWND_TOPMOST, IDC_ARROW,
     LWA_ALPHA, LoadCursorW, MB_ICONERROR, MB_OK, MessageBoxW, PostMessageW, RegisterClassExW,
     SW_SHOWNOACTIVATE, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SWP_SHOWWINDOW,
     SetForegroundWindow, SetLayeredWindowAttributes, SetWindowLongPtrW, SetWindowPos, ShowWindow,
     WM_CAPTURECHANGED, WM_CLOSE, WM_CONTEXTMENU, WM_DPICHANGED, WM_ERASEBKGND, WM_LBUTTONDBLCLK,
     WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCDESTROY, WM_PAINT, WNDCLASSEXW,
-    WS_EX_LAYERED, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
+    WS_CAPTION, WS_EX_LAYERED, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_SYSMENU,
 };
 
 use crate::geometry::{PointI, RectI, scaled_dimension, zoom_around_point};
@@ -31,6 +32,8 @@ const MIN_SCALE: f64 = 0.10;
 const MAX_SCALE: f64 = 8.0;
 const DEFAULT_OPACITY: u8 = 255;
 const MIN_OPACITY: u8 = 32;
+const PIN_WINDOW_STYLE: u32 = WS_CAPTION | WS_SYSMENU;
+const PIN_WINDOW_EX_STYLE: u32 = WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_TOPMOST;
 
 struct PinState {
     bitmap: CapturedBitmap,
@@ -67,15 +70,17 @@ pub unsafe fn create(
 ) -> io::Result<HWND> {
     let class_name = wide_null(PIN_CLASS);
     let title = wide_null("Rustpture image");
+    let (window_width, window_height) =
+        window_size_for_client(bitmap.width(), bitmap.height());
     let window = CreateWindowExW(
-        WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_TOPMOST,
+        PIN_WINDOW_EX_STYLE,
         class_name.as_ptr(),
         title.as_ptr(),
-        WS_POPUP,
+        PIN_WINDOW_STYLE,
         capture_rect.left,
         capture_rect.top,
-        bitmap.width(),
-        bitmap.height(),
+        window_width,
+        window_height,
         null_mut(),
         null_mut(),
         instance,
@@ -107,8 +112,8 @@ pub unsafe fn create(
         HWND_TOPMOST,
         capture_rect.left,
         capture_rect.top,
-        capture_rect.width(),
-        capture_rect.height(),
+        window_width,
+        window_height,
         SWP_NOACTIVATE | SWP_SHOWWINDOW,
     ) == 0
     {
@@ -120,6 +125,34 @@ pub unsafe fn create(
     ShowWindow(window, SW_SHOWNOACTIVATE);
     UpdateWindow(window);
     Ok(window)
+}
+
+unsafe fn window_size_for_client(width: i32, height: i32) -> (i32, i32) {
+    let client_width = width.max(1);
+    let client_height = height.max(1);
+    let mut rect = RECT {
+        left: 0,
+        top: 0,
+        right: client_width,
+        bottom: client_height,
+    };
+
+    if AdjustWindowRectEx(
+        &mut rect,
+        PIN_WINDOW_STYLE,
+        0,
+        PIN_WINDOW_EX_STYLE,
+    ) == 0
+    {
+        return (client_width, client_height);
+    }
+
+    (rect.right - rect.left, rect.bottom - rect.top)
+}
+
+unsafe fn window_frame_size() -> (i32, i32) {
+    let (width, height) = window_size_for_client(1, 1);
+    (width - 1, height - 1)
 }
 
 unsafe fn state_ptr(window: HWND) -> *mut PinState {
@@ -310,8 +343,9 @@ unsafe fn apply_scale(window: HWND, scale: f64, anchor: PointI) {
         return;
     }
     let old = RectI::new(old.left, old.top, old.right, old.bottom);
-    let width = scaled_dimension((*pointer).bitmap.width(), scale);
-    let height = scaled_dimension((*pointer).bitmap.height(), scale);
+    let client_width = scaled_dimension((*pointer).bitmap.width(), scale);
+    let client_height = scaled_dimension((*pointer).bitmap.height(), scale);
+    let (width, height) = window_size_for_client(client_width, client_height);
     let origin = zoom_around_point(old, anchor, width, height);
     (*pointer).scale = scale;
 
@@ -414,11 +448,15 @@ unsafe fn fit_to_monitor(window: HWND) {
     let source_height = (*pointer).bitmap.height();
     let available_width = info.rcWork.right - info.rcWork.left;
     let available_height = info.rcWork.bottom - info.rcWork.top;
-    let scale = (available_width as f64 / source_width as f64)
-        .min(available_height as f64 / source_height as f64)
+    let (frame_width, frame_height) = window_frame_size();
+    let available_client_width = (available_width - frame_width).max(1);
+    let available_client_height = (available_height - frame_height).max(1);
+    let scale = (available_client_width as f64 / source_width as f64)
+        .min(available_client_height as f64 / source_height as f64)
         .clamp(MIN_SCALE, MAX_SCALE);
-    let width = scaled_dimension(source_width, scale);
-    let height = scaled_dimension(source_height, scale);
+    let client_width = scaled_dimension(source_width, scale);
+    let client_height = scaled_dimension(source_height, scale);
+    let (width, height) = window_size_for_client(client_width, client_height);
     let x = info.rcWork.left + (available_width - width) / 2;
     let y = info.rcWork.top + (available_height - height) / 2;
     (*pointer).scale = scale;
