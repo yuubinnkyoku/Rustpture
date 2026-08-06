@@ -10,15 +10,15 @@ use windows_sys::Win32::Graphics::Gdi::{
 use windows_sys::Win32::System::SystemServices::MK_CONTROL;
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{ReleaseCapture, SetCapture};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    AdjustWindowRectEx, CS_DBLCLKS, CreateWindowExW, DefWindowProcW, DestroyWindow,
-    GWLP_USERDATA, GetClientRect,
-    GetCursorPos, GetWindowLongPtrW, GetWindowRect, HWND_NOTOPMOST, HWND_TOPMOST, IDC_ARROW,
-    LWA_ALPHA, LoadCursorW, MB_ICONERROR, MB_OK, MessageBoxW, PostMessageW, RegisterClassExW,
-    SW_SHOWNOACTIVATE, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SWP_SHOWWINDOW,
-    SetForegroundWindow, SetLayeredWindowAttributes, SetWindowLongPtrW, SetWindowPos, ShowWindow,
-    WM_CAPTURECHANGED, WM_CLOSE, WM_CONTEXTMENU, WM_DPICHANGED, WM_ERASEBKGND, WM_LBUTTONDBLCLK,
-    WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCDESTROY, WM_PAINT, WNDCLASSEXW,
-    WS_CAPTION, WS_EX_LAYERED, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_SYSMENU,
+    AdjustWindowRectEx, CS_DBLCLKS, CreateWindowExW, DefWindowProcW, DestroyWindow, GWLP_USERDATA,
+    GetClientRect, GetCursorPos, GetWindowLongPtrW, GetWindowRect, HWND_NOTOPMOST, HWND_TOPMOST,
+    IDC_ARROW, LWA_ALPHA, LoadCursorW, MB_ICONERROR, MB_OK, MessageBoxW, PostMessageW,
+    RegisterClassExW, SW_SHOWNOACTIVATE, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER,
+    SWP_SHOWWINDOW, SetForegroundWindow, SetLayeredWindowAttributes, SetWindowLongPtrW,
+    SetWindowPos, ShowWindow, WM_CAPTURECHANGED, WM_CLOSE, WM_CONTEXTMENU, WM_DPICHANGED,
+    WM_ERASEBKGND, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL,
+    WM_NCDESTROY, WM_PAINT, WNDCLASSEXW, WS_CAPTION, WS_EX_LAYERED, WS_EX_TOOLWINDOW,
+    WS_EX_TOPMOST, WS_SYSMENU,
 };
 
 use crate::geometry::{PointI, RectI, scaled_dimension, zoom_around_point};
@@ -70,8 +70,7 @@ pub unsafe fn create(
 ) -> io::Result<HWND> {
     let class_name = wide_null(PIN_CLASS);
     let title = wide_null("Rustpture image");
-    let (window_width, window_height) =
-        window_size_for_client(bitmap.width(), bitmap.height());
+    let (window_width, window_height) = window_size_for_client(bitmap.width(), bitmap.height());
     let window = CreateWindowExW(
         PIN_WINDOW_EX_STYLE,
         class_name.as_ptr(),
@@ -137,13 +136,7 @@ unsafe fn window_size_for_client(width: i32, height: i32) -> (i32, i32) {
         bottom: client_height,
     };
 
-    if AdjustWindowRectEx(
-        &mut rect,
-        PIN_WINDOW_STYLE,
-        0,
-        PIN_WINDOW_EX_STYLE,
-    ) == 0
-    {
+    if AdjustWindowRectEx(&mut rect, PIN_WINDOW_STYLE, 0, PIN_WINDOW_EX_STYLE) == 0 {
         return (client_width, client_height);
     }
 
