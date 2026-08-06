@@ -1,0 +1,65 @@
+name: Fix modern title bar fallback once
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Replace tool-window chrome with standard Windows chrome
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('src/win/pin.rs')
+          content = path.read_text(encoding='utf-8')
+
+          old_import = '''    WM_NCDESTROY, WM_PAINT, WNDCLASSEXW, WS_CAPTION, WS_EX_LAYERED, WS_EX_TOOLWINDOW,
+              WS_EX_TOPMOST, WS_SYSMENU,
+          '''
+          new_import = '''    WM_NCDESTROY, WM_PAINT, WNDCLASSEXW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOPMOST,
+              WS_OVERLAPPEDWINDOW,
+          '''
+          content = content.replace(old_import, new_import)
+          content = content.replace(
+              'const PIN_WINDOW_STYLE: u32 = WS_CAPTION | WS_SYSMENU;',
+              'const PIN_WINDOW_STYLE: u32 = WS_OVERLAPPEDWINDOW;',
+          )
+          content = content.replace(
+              'const PIN_WINDOW_EX_STYLE: u32 = WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_TOPMOST;',
+              'const PIN_WINDOW_EX_STYLE: u32 = WS_EX_LAYERED | WS_EX_NOACTIVATE | WS_EX_TOPMOST;',
+          )
+
+          if 'WS_EX_TOOLWINDOW' in content or 'WS_CAPTION | WS_SYSMENU' in content:
+              raise SystemExit('The title-bar style replacement did not complete.')
+          if 'WS_OVERLAPPEDWINDOW' not in content or 'WS_EX_NOACTIVATE' not in content:
+              raise SystemExit('The standard title-bar styles are missing.')
+
+          path.write_text(content, encoding='utf-8')
+          PY
+          cargo fmt --all
+
+      - name: Commit update and remove temporary workflows
+        shell: bash
+        run: |
+          rm -f .github/workflows/fix-modern-titlebar-once.yml
+          rm -f .github/workflows/fix-modern-titlebar-ubuntu-once.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'Use standard Windows title bar for pinned images'
+          git push origin HEAD:main
