@@ -5,29 +5,28 @@ use std::ptr::{null, null_mut};
 use windows_sys::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
 use windows_sys::Win32::Graphics::Dwm::DwmFlush;
 use windows_sys::Win32::Graphics::Gdi::{
-    BeginPaint, CreateSolidBrush, DeleteObject, EndPaint, FillRect, FrameRect, HBRUSH,
-    HGDIOBJ, PAINTSTRUCT,
+    BeginPaint, CreateSolidBrush, DeleteObject, EndPaint, FillRect, FrameRect, HBRUSH, HGDIOBJ,
+    PAINTSTRUCT,
 };
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::VK_ESCAPE;
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, DestroyWindow, GetClientRect, GetCursorPos,
-    GetSystemMetrics, GetWindowLongPtrW, InvalidateRect, IsWindowVisible, LoadCursorW,
-    MessageBoxW, MoveWindow, RegisterClassExW, ReleaseCapture, ScreenToClient,
-    SetActiveWindow, SetCapture, SetFocus, SetForegroundWindow, SetLayeredWindowAttributes,
-    SetWindowLongPtrW, SetWindowPos, ShowWindow, UpdateWindow, WNDCLASSEXW, CS_DBLCLKS,
-    GWLP_USERDATA, HWND_TOPMOST, IDC_CROSS, LWA_ALPHA, LWA_COLORKEY, MB_ICONERROR, MB_OK,
-    SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN,
-    SWP_SHOWWINDOW, SW_HIDE, WM_CANCELMODE, WM_CAPTURECHANGED, WM_ERASEBKGND, WM_KEYDOWN,
-    WM_KILLFOCUS, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_NCDESTROY, WM_PAINT,
-    WS_EX_LAYERED, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
+    CS_DBLCLKS, CreateWindowExW, DefWindowProcW, DestroyWindow, GWLP_USERDATA, GetClientRect,
+    GetCursorPos, GetSystemMetrics, GetWindowLongPtrW, HWND_TOPMOST, IDC_CROSS, InvalidateRect,
+    IsWindowVisible, LWA_ALPHA, LWA_COLORKEY, LoadCursorW, MB_ICONERROR, MB_OK, MessageBoxW,
+    MoveWindow, RegisterClassExW, ReleaseCapture, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN,
+    SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN, SW_HIDE, SWP_SHOWWINDOW, ScreenToClient, SetActiveWindow,
+    SetCapture, SetFocus, SetForegroundWindow, SetLayeredWindowAttributes, SetWindowLongPtrW,
+    SetWindowPos, ShowWindow, UpdateWindow, WM_CANCELMODE, WM_CAPTURECHANGED, WM_ERASEBKGND,
+    WM_KEYDOWN, WM_KILLFOCUS, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_NCDESTROY, WM_PAINT,
+    WNDCLASSEXW, WS_EX_LAYERED, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
 };
 
 use crate::geometry::{PointI, RectI};
 
+use super::OVERLAY_CLASS;
 use super::bitmap::CapturedBitmap;
 use super::pin;
 use super::wide::wide_null;
-use super::OVERLAY_CLASS;
 
 const OVERLAY_ALPHA: u8 = 112;
 const COLOR_KEY: u32 = rgb(255, 0, 255);
@@ -136,13 +135,7 @@ pub unsafe fn create(instance: HINSTANCE, controller: HWND) -> io::Result<HWND> 
     });
     SetWindowLongPtrW(window, GWLP_USERDATA, Box::into_raw(state) as isize);
 
-    if SetLayeredWindowAttributes(
-        window,
-        COLOR_KEY,
-        OVERLAY_ALPHA,
-        LWA_ALPHA | LWA_COLORKEY,
-    ) == 0
-    {
+    if SetLayeredWindowAttributes(window, COLOR_KEY, OVERLAY_ALPHA, LWA_ALPHA | LWA_COLORKEY) == 0 {
         let error = io::Error::last_os_error();
         DestroyWindow(window);
         return Err(error);
@@ -342,11 +335,17 @@ unsafe fn finish_selection(window: HWND, point: PointI) {
     match CapturedBitmap::capture(screen_rect) {
         Ok(bitmap) => {
             if let Err(error) = pin::create(instance, controller, bitmap, screen_rect) {
-                show_error(window, &format!("画像ウィンドウを作成できませんでした。\n\n{error}"));
+                show_error(
+                    window,
+                    &format!("画像ウィンドウを作成できませんでした。\n\n{error}"),
+                );
             }
         }
         Err(error) => {
-            show_error(window, &format!("画面をキャプヅャできませんでした。\n\n{error}"));
+            show_error(
+                window,
+                &format!("画面をキャプヅャできませんでした。\n\n{error}"),
+            );
         }
     }
 }

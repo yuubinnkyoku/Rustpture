@@ -4,24 +4,23 @@ use std::ptr::{null, null_mut};
 
 use windows_sys::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
 use windows_sys::Win32::Graphics::Gdi::{
-    BeginPaint, EndPaint, GetMonitorInfoW, MonitorFromWindow, MONITORINFO,
-    MONITOR_DEFAULTTONEAREST, PAINTSTRUCT,
+    BeginPaint, EndPaint, GetMonitorInfoW, MONITOR_DEFAULTTONEAREST, MONITORINFO,
+    MonitorFromWindow, PAINTSTRUCT,
 };
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::MK_CONTROL;
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, DestroyWindow, GetClientRect, GetCursorPos,
-    GetWindowLongPtrW, GetWindowRect, InvalidateRect, LoadCursorW, MessageBoxW, PostMessageW,
-    RegisterClassExW, ReleaseCapture, SetCapture, SetForegroundWindow,
-    SetLayeredWindowAttributes, SetWindowLongPtrW, SetWindowPos, ShowWindow, UpdateWindow,
-    WNDCLASSEXW, CS_DBLCLKS, GWLP_USERDATA, HWND_NOTOPMOST, HWND_TOPMOST, IDC_ARROW,
-    LWA_ALPHA, MB_ICONERROR, MB_OK, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER,
-    SWP_SHOWWINDOW, SW_SHOWNOACTIVATE, WM_CAPTURECHANGED, WM_CLOSE, WM_CONTEXTMENU,
-    WM_DPICHANGED, WM_ERASEBKGND, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP,
-    WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCDESTROY, WM_PAINT, WS_EX_LAYERED, WS_EX_TOOLWINDOW,
-    WS_EX_TOPMOST, WS_POPUP,
+    CS_DBLCLKS, CreateWindowExW, DefWindowProcW, DestroyWindow, GWLP_USERDATA, GetClientRect,
+    GetCursorPos, GetWindowLongPtrW, GetWindowRect, HWND_NOTOPMOST, HWND_TOPMOST, IDC_ARROW,
+    InvalidateRect, LWA_ALPHA, LoadCursorW, MB_ICONERROR, MB_OK, MessageBoxW, PostMessageW,
+    RegisterClassExW, ReleaseCapture, SW_SHOWNOACTIVATE, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
+    SWP_NOZORDER, SWP_SHOWWINDOW, SetCapture, SetForegroundWindow, SetLayeredWindowAttributes,
+    SetWindowLongPtrW, SetWindowPos, ShowWindow, UpdateWindow, WM_CAPTURECHANGED, WM_CLOSE,
+    WM_CONTEXTMENU, WM_DPICHANGED, WM_ERASEBKGND, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP,
+    WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCDESTROY, WM_PAINT, WNDCLASSEXW, WS_EX_LAYERED,
+    WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
 };
 
-use crate::geometry::{scaled_dimension, zoom_around_point, PointI, RectI};
+use crate::geometry::{PointI, RectI, scaled_dimension, zoom_around_point};
 
 use super::bitmap::CapturedBitmap;
 use super::menu;
@@ -365,7 +364,10 @@ unsafe fn execute_menu_command(window: HWND, command: u32) {
             let pointer = state_ptr(window);
             if !pointer.is_null() {
                 if let Err(error) = (*pointer).bitmap.copy_to_clipboard(window) {
-                    show_error(window, &format!("画像をコピーできませんでした。\n\n{error}"));
+                    show_error(
+                        window,
+                        &format!("画像をコピーできませんでした。\n\n{error}"),
+                    );
                 }
             }
         }

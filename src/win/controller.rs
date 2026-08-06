@@ -5,11 +5,11 @@ use std::ptr::{null, null_mut};
 use windows_sys::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, WPARAM};
 use windows_sys::Win32::Graphics::Gdi::{BeginPaint, EndPaint, PAINTSTRUCT};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, DestroyWindow, GetWindowLongPtrW, LoadCursorW,
-    LoadIconW, PostQuitMessage, RegisterClassExW, SetWindowLongPtrW, ShowWindow,
-    WNDCLASSEXW, CS_DBLCLKS, CW_USEDEFAULT, GWLP_USERDATA, IDC_ARROW, IDI_APPLICATION,
-    SC_MAXIMIZE, SC_RESTORE, SW_SHOWMINNOACTIVE, WM_CLOSE, WM_DESTROY, WM_DISPLAYCHANGE,
-    WM_NCDESTROY, WM_PAINT, WM_SYSCOMMAND, WS_OVERLAPPEDWINDOW,
+    CS_DBLCLKS, CW_USEDEFAULT, CreateWindowExW, DefWindowProcW, DestroyWindow, GWLP_USERDATA,
+    GetWindowLongPtrW, IDC_ARROW, IDI_APPLICATION, LoadCursorW, LoadIconW, PostQuitMessage,
+    RegisterClassExW, SC_MAXIMIZE, SC_RESTORE, SW_SHOWMINNOACTIVE, SetWindowLongPtrW, ShowWindow,
+    WM_CLOSE, WM_DESTROY, WM_DISPLAYCHANGE, WM_NCDESTROY, WM_PAINT, WM_SYSCOMMAND, WNDCLASSEXW,
+    WS_OVERLAPPEDWINDOW,
 };
 
 use super::overlay;

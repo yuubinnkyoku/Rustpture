@@ -11,9 +11,8 @@ use std::ptr::{null, null_mut};
 
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    AllowSetForegroundWindow, DispatchMessageW, FindWindowW, GetMessageW,
-    GetWindowThreadProcessId, MessageBoxW, PostMessageW, TranslateMessage, MB_ICONERROR, MB_OK,
-    MSG, WM_CLOSE,
+    AllowSetForegroundWindow, DispatchMessageW, FindWindowW, GetMessageW, GetWindowThreadProcessId,
+    MB_ICONERROR, MB_OK, MSG, MessageBoxW, PostMessageW, TranslateMessage, WM_CLOSE,
 };
 
 use self::wide::wide_null;

@@ -2,9 +2,9 @@ use std::ptr::{null, null_mut};
 
 use windows_sys::Win32::Foundation::HWND;
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    AppendMenuW, CreatePopupMenu, DestroyMenu, PostMessageW, SetForegroundWindow,
-    TrackPopupMenuEx, HMENU, MF_CHECKED, MF_POPUP, MF_SEPARATOR, MF_STRING, TPM_LEFTALIGN,
-    TPM_RETURNCMD, TPM_RIGHTBUTTON, TPM_TOPALIGN, WM_NULL,
+    AppendMenuW, CreatePopupMenu, DestroyMenu, HMENU, MF_CHECKED, MF_POPUP, MF_SEPARATOR,
+    MF_STRING, PostMessageW, SetForegroundWindow, TPM_LEFTALIGN, TPM_RETURNCMD, TPM_RIGHTBUTTON,
+    TPM_TOPALIGN, TrackPopupMenuEx, WM_NULL,
 };
 
 use crate::geometry::PointI;
@@ -55,12 +55,7 @@ pub unsafe fn show_pin_menu(
     }
 
     append_text(menu, CMD_FIT, "画面に合わせる(&F)", false);
-    append_text(
-        menu,
-        CMD_ALWAYS_ON_TOP,
-        "常に手前に表示(&T)",
-        always_on_top,
-    );
+    append_text(menu, CMD_ALWAYS_ON_TOP, "常に手前に表示(&T)", always_on_top);
     append_text(menu, CMD_RESTORE_ONSCREEN, "画面内に戻す(&D)", false);
     AppendMenuW(menu, MF_SEPARATOR, 0, null());
     append_text(menu, CMD_CLOSE, "この画像を閉じる(&Q)\tAlt+F4", false);

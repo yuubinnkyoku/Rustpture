@@ -3,16 +3,14 @@ use std::ptr::null_mut;
 
 use windows_sys::Win32::Foundation::{HANDLE, HWND};
 use windows_sys::Win32::Graphics::Gdi::{
-    BitBlt, CreateCompatibleBitmap, CreateCompatibleDC, DeleteDC, DeleteObject, GetDC,
-    ReleaseDC, SelectObject, SetBrushOrgEx, SetStretchBltMode, StretchBlt, CAPTUREBLT,
-    HALFTONE, HBITMAP, HDC, HGDIOBJ, SRCCOPY,
+    BitBlt, CAPTUREBLT, CreateCompatibleBitmap, CreateCompatibleDC, DeleteDC, DeleteObject, GetDC,
+    HALFTONE, HBITMAP, HDC, HGDIOBJ, ReleaseDC, SRCCOPY, SelectObject, SetBrushOrgEx,
+    SetStretchBltMode, StretchBlt,
 };
 use windows_sys::Win32::System::DataExchange::{
-    CloseClipboard, EmptyClipboard, OpenClipboard, SetClipboardData, CF_BITMAP,
+    CF_BITMAP, CloseClipboard, EmptyClipboard, OpenClipboard, SetClipboardData,
 };
-use windows_sys::Win32::UI::WindowsAndMessaging::{
-    CopyImage, IMAGE_BITMAP, LR_CREATEDIBSECTION,
-};
+use windows_sys::Win32::UI::WindowsAndMessaging::{CopyImage, IMAGE_BITMAP, LR_CREATEDIBSECTION};
 
 use crate::geometry::RectI;
 
