@@ -1,0 +1,75 @@
+name: Fix imports once
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: Fix windows-sys module imports
+        shell: python
+        run: |
+          from pathlib import Path
+
+          def replace(path: str, old: str, new: str) -> None:
+              p = Path(path)
+              text = p.read_text(encoding="utf-8")
+              if old not in text:
+                  raise SystemExit(f"expected text not found in {path}:\n{old}")
+              p.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+          replace(
+              "Cargo.toml",
+              '    "Win32_System_DataExchange",\n    "Win32_System_LibraryLoader",',
+              '    "Win32_System_DataExchange",\n    "Win32_System_LibraryLoader",\n    "Win32_System_Ole",\n    "Win32_System_SystemServices",',
+          )
+
+          replace(
+              "src/win/bitmap.rs",
+              "use windows_sys::Win32::System::DataExchange::{\n    CF_BITMAP, CloseClipboard, EmptyClipboard, OpenClipboard, SetClipboardData,\n};",
+              "use windows_sys::Win32::System::DataExchange::{\n    CloseClipboard, EmptyClipboard, OpenClipboard, SetClipboardData,\n};\nuse windows_sys::Win32::System::Ole::CF_BITMAP;",
+          )
+
+          replace(
+              "src/win/overlay.rs",
+              "use windows_sys::Win32::Graphics::Gdi::{\n    BeginPaint, CreateSolidBrush, DeleteObject, EndPaint, FillRect, FrameRect, HBRUSH, HGDIOBJ,\n    PAINTSTRUCT,\n};\nuse windows_sys::Win32::UI::Input::KeyboardAndMouse::VK_ESCAPE;",
+              "use windows_sys::Win32::Graphics::Gdi::{\n    BeginPaint, CreateSolidBrush, DeleteObject, EndPaint, FillRect, FrameRect, HBRUSH, HGDIOBJ,\n    InvalidateRect, PAINTSTRUCT, ScreenToClient, UpdateWindow,\n};\nuse windows_sys::Win32::UI::Input::KeyboardAndMouse::{\n    ReleaseCapture, SetActiveWindow, SetCapture, SetFocus, VK_ESCAPE,\n};",
+          )
+          replace(
+              "src/win/overlay.rs",
+              "use windows_sys::Win32::UI::WindowsAndMessaging::{\n    CS_DBLCLKS, CreateWindowExW, DefWindowProcW, DestroyWindow, GWLP_USERDATA, GetClientRect,\n    GetCursorPos, GetSystemMetrics, GetWindowLongPtrW, HWND_TOPMOST, IDC_CROSS, InvalidateRect,\n    IsWindowVisible, LWA_ALPHA, LWA_COLORKEY, LoadCursorW, MB_ICONERROR, MB_OK, MessageBoxW,\n    MoveWindow, RegisterClassExW, ReleaseCapture, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN,\n    SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN, SW_HIDE, SWP_SHOWWINDOW, ScreenToClient, SetActiveWindow,\n    SetCapture, SetFocus, SetForegroundWindow, SetLayeredWindowAttributes, SetWindowLongPtrW,\n    SetWindowPos, ShowWindow, UpdateWindow, WM_CANCELMODE, WM_CAPTURECHANGED, WM_ERASEBKGND,\n    WM_KEYDOWN, WM_KILLFOCUS, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_NCDESTROY, WM_PAINT,\n    WNDCLASSEXW, WS_EX_LAYERED, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,\n};",
+              "use windows_sys::Win32::UI::WindowsAndMessaging::{\n    CS_DBLCLKS, CreateWindowExW, DefWindowProcW, DestroyWindow, GWLP_USERDATA, GetClientRect,\n    GetCursorPos, GetSystemMetrics, GetWindowLongPtrW, HWND_TOPMOST, IDC_CROSS, IsWindowVisible,\n    LWA_ALPHA, LWA_COLORKEY, LoadCursorW, MB_ICONERROR, MB_OK, MessageBoxW, MoveWindow,\n    RegisterClassExW, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN,\n    SM_YVIRTUALSCREEN, SW_HIDE, SWP_SHOWWINDOW, SetForegroundWindow, SetLayeredWindowAttributes,\n    SetWindowLongPtrW, SetWindowPos, ShowWindow, WM_CANCELMODE, WM_CAPTURECHANGED,\n    WM_ERASEBKGND, WM_KEYDOWN, WM_KILLFOCUS, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE,\n    WM_NCDESTROY, WM_PAINT, WNDCLASSEXW, WS_EX_LAYERED, WS_EX_TOOLWINDOW, WS_EX_TOPMOST,\n    WS_POPUP,\n};",
+          )
+
+          replace(
+              "src/win/pin.rs",
+              "use windows_sys::Win32::Graphics::Gdi::{\n    BeginPaint, EndPaint, GetMonitorInfoW, MONITOR_DEFAULTTONEAREST, MONITORINFO,\n    MonitorFromWindow, PAINTSTRUCT,\n};\nuse windows_sys::Win32::UI::Input::KeyboardAndMouse::MK_CONTROL;",
+              "use windows_sys::Win32::Graphics::Gdi::{\n    BeginPaint, EndPaint, GetMonitorInfoW, InvalidateRect, MONITOR_DEFAULTTONEAREST, MONITORINFO,\n    MonitorFromWindow, PAINTSTRUCT, UpdateWindow,\n};\nuse windows_sys::Win32::System::SystemServices::MK_CONTROL;\nuse windows_sys::Win32::UI::Input::KeyboardAndMouse::{ReleaseCapture, SetCapture};",
+          )
+          replace(
+              "src/win/pin.rs",
+              "use windows_sys::Win32::UI::WindowsAndMessaging::{\n    CS_DBLCLKS, CreateWindowExW, DefWindowProcW, DestroyWindow, GWLP_USERDATA, GetClientRect,\n    GetCursorPos, GetWindowLongPtrW, GetWindowRect, HWND_NOTOPMOST, HWND_TOPMOST, IDC_ARROW,\n    InvalidateRect, LWA_ALPHA, LoadCursorW, MB_ICONERROR, MB_OK, MessageBoxW, PostMessageW,\n    RegisterClassExW, ReleaseCapture, SW_SHOWNOACTIVATE, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,\n    SWP_NOZORDER, SWP_SHOWWINDOW, SetCapture, SetForegroundWindow, SetLayeredWindowAttributes,\n    SetWindowLongPtrW, SetWindowPos, ShowWindow, UpdateWindow, WM_CAPTURECHANGED, WM_CLOSE,\n    WM_CONTEXTMENU, WM_DPICHANGED, WM_ERASEBKGND, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP,\n    WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCDESTROY, WM_PAINT, WNDCLASSEXW, WS_EX_LAYERED,\n    WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,\n};",
+              "use windows_sys::Win32::UI::WindowsAndMessaging::{\n    CS_DBLCLKS, CreateWindowExW, DefWindowProcW, DestroyWindow, GWLP_USERDATA, GetClientRect,\n    GetCursorPos, GetWindowLongPtrW, GetWindowRect, HWND_NOTOPMOST, HWND_TOPMOST, IDC_ARROW,\n    LWA_ALPHA, LoadCursorW, MB_ICONERROR, MB_OK, MessageBoxW, PostMessageW, RegisterClassExW,\n    SW_SHOWNOACTIVATE, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SWP_SHOWWINDOW,\n    SetForegroundWindow, SetLayeredWindowAttributes, SetWindowLongPtrW, SetWindowPos, ShowWindow,\n    WM_CAPTURECHANGED, WM_CLOSE, WM_CONTEXTMENU, WM_DPICHANGED, WM_ERASEBKGND,\n    WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCDESTROY,\n    WM_PAINT, WNDCLASSEXW, WS_EX_LAYERED, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,\n};",
+          )
+      - name: Format
+        run: cargo fmt --all
+      - name: Commit fixes
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Cargo.toml src/win/bitmap.rs src/win/overlay.rs src/win/pin.rs
+          git commit -m "Fix windows-sys imports"
+          git push
