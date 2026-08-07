@@ -73,7 +73,6 @@ pub fn run() -> io::Result<()> {
             }
         };
         controller::attach_state(controller, overlay);
-        controller::show_resident(controller);
 
         if command == Command::Capture {
             PostMessageW(controller, WM_APP_BEGIN_CAPTURE, 0, 0);
