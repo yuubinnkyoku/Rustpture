@@ -15,11 +15,12 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
     CS_DBLCLKS, CreateWindowExW, DefWindowProcW, DestroyWindow, GWLP_USERDATA, GetClientRect,
     GetCursorPos, GetSystemMetrics, GetWindowLongPtrW, HWND_TOPMOST, IDC_CROSS, IsWindowVisible,
     LWA_ALPHA, LWA_COLORKEY, LoadCursorW, MB_ICONERROR, MB_OK, MessageBoxW, MoveWindow,
-    RegisterClassExW, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN,
-    SW_HIDE, SWP_SHOWWINDOW, SetForegroundWindow, SetLayeredWindowAttributes, SetWindowLongPtrW,
-    SetWindowPos, ShowWindow, WM_CANCELMODE, WM_CAPTURECHANGED, WM_ERASEBKGND, WM_KEYDOWN,
-    WM_KILLFOCUS, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_NCDESTROY, WM_PAINT, WNDCLASSEXW,
-    WS_EX_LAYERED, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
+    RDW_NOERASE, RDW_UPDATENOW, RedrawWindow, RegisterClassExW, SM_CXVIRTUALSCREEN,
+    SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN, SW_HIDE, SWP_SHOWWINDOW,
+    SetForegroundWindow, SetLayeredWindowAttributes, SetWindowLongPtrW, SetWindowPos, ShowWindow,
+    WM_CANCELMODE, WM_CAPTURECHANGED, WM_ERASEBKGND, WM_KEYDOWN, WM_KILLFOCUS, WM_LBUTTONDOWN,
+    WM_LBUTTONUP, WM_MOUSEMOVE, WM_NCDESTROY, WM_PAINT, WNDCLASSEXW, WS_EX_LAYERED,
+    WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
 };
 
 use crate::geometry::{PointI, RectI};
@@ -33,6 +34,7 @@ const OVERLAY_ALPHA: u8 = 112;
 const COLOR_KEY: u32 = rgb(255, 0, 255);
 const DIM_COLOR: u32 = rgb(0, 0, 0);
 const BORDER_COLOR: u32 = rgb(255, 255, 255);
+const BORDER_WIDTH: i32 = 2;
 
 const fn rgb(red: u8, green: u8, blue: u8) -> u32 {
     red as u32 | ((green as u32) << 8) | ((blue as u32) << 16)
@@ -218,17 +220,19 @@ unsafe extern "system" fn window_proc(
                 (*pointer).anchor = point;
                 (*pointer).current = point;
                 SetCapture(window);
-                InvalidateRect(window, null(), 0);
             }
             0
         }
         WM_MOUSEMOVE => {
             let pointer = state_ptr(window);
             if !pointer.is_null() && (*pointer).dragging {
-                let point =
-                    cursor_client_point(window).unwrap_or_else(|| point_from_lparam(lparam));
-                (*pointer).current = point;
-                InvalidateRect(window, null(), 0);
+                let point = point_from_lparam(lparam);
+                if point != (*pointer).current {
+                    let old_selection = RectI::from_points((*pointer).anchor, (*pointer).current);
+                    (*pointer).current = point;
+                    let new_selection = RectI::from_points((*pointer).anchor, (*pointer).current);
+                    redraw_selection_delta(window, old_selection, new_selection);
+                }
             }
             0
         }
@@ -253,9 +257,10 @@ unsafe extern "system" fn window_proc(
         }
         WM_CANCELMODE | WM_CAPTURECHANGED => {
             let pointer = state_ptr(window);
-            if !pointer.is_null() {
+            if !pointer.is_null() && (*pointer).dragging {
+                let old_selection = RectI::from_points((*pointer).anchor, (*pointer).current);
                 (*pointer).dragging = false;
-                InvalidateRect(window, null(), 0);
+                redraw_selection_delta(window, old_selection, RectI::default());
             }
             0
         }
@@ -274,21 +279,20 @@ unsafe extern "system" fn window_proc(
 unsafe fn paint(window: HWND) {
     let mut paint: PAINTSTRUCT = zeroed();
     let dc = BeginPaint(window, &mut paint);
-    let mut client: RECT = zeroed();
-    GetClientRect(window, &mut client);
 
     let pointer = state_ptr(window);
     if !pointer.is_null() {
-        FillRect(dc, &client, (*pointer).dim_brush);
+        // During dragging only the pixels whose selection state changed are invalidated.
+        // Painting rcPaint instead of the whole virtual desktop keeps pointer tracking
+        // responsive even on large multi-monitor setups.
+        if paint.rcPaint.right > paint.rcPaint.left && paint.rcPaint.bottom > paint.rcPaint.top {
+            FillRect(dc, &paint.rcPaint, (*pointer).dim_brush);
+        }
+
         if (*pointer).dragging {
             let selection = RectI::from_points((*pointer).anchor, (*pointer).current);
             if !selection.is_empty() {
-                let rect = RECT {
-                    left: selection.left,
-                    top: selection.top,
-                    right: selection.right,
-                    bottom: selection.bottom,
-                };
+                let rect = to_win_rect(selection);
                 FillRect(dc, &rect, (*pointer).key_brush);
                 FrameRect(dc, &rect, (*pointer).border_brush);
 
@@ -306,6 +310,88 @@ unsafe fn paint(window: HWND) {
     }
 
     EndPaint(window, &paint);
+}
+
+unsafe fn redraw_selection_delta(window: HWND, old: RectI, new: RectI) {
+    // Most mouse moves alter only one or two thin strips of the selection. Invalidating
+    // the symmetric difference avoids repainting the potentially multi-megapixel
+    // overlap on every WM_MOUSEMOVE.
+    invalidate_difference(window, old, new);
+    invalidate_difference(window, new, old);
+    invalidate_frame(window, old);
+    invalidate_frame(window, new);
+
+    // WM_MOUSEMOVE messages can arrive faster than ordinary WM_PAINT dispatch. Flush
+    // only the already-invalid update region now so the border stays under the cursor.
+    RedrawWindow(window, null(), null_mut(), RDW_NOERASE | RDW_UPDATENOW);
+}
+
+unsafe fn invalidate_difference(window: HWND, rect: RectI, other: RectI) {
+    if rect.is_empty() {
+        return;
+    }
+
+    let intersection = intersect(rect, other);
+    if intersection.is_empty() {
+        invalidate(window, rect);
+        return;
+    }
+
+    invalidate(window, RectI::new(rect.left, rect.top, rect.right, intersection.top));
+    invalidate(window, RectI::new(rect.left, intersection.bottom, rect.right, rect.bottom));
+    invalidate(
+        window,
+        RectI::new(rect.left, intersection.top, intersection.left, intersection.bottom),
+    );
+    invalidate(
+        window,
+        RectI::new(intersection.right, intersection.top, rect.right, intersection.bottom),
+    );
+}
+
+unsafe fn invalidate_frame(window: HWND, rect: RectI) {
+    if rect.is_empty() {
+        return;
+    }
+
+    let width = BORDER_WIDTH.min(rect.width()).max(1);
+    let height = BORDER_WIDTH.min(rect.height()).max(1);
+    invalidate(window, RectI::new(rect.left, rect.top, rect.right, rect.top + height));
+    invalidate(
+        window,
+        RectI::new(rect.left, rect.bottom - height, rect.right, rect.bottom),
+    );
+    invalidate(window, RectI::new(rect.left, rect.top, rect.left + width, rect.bottom));
+    invalidate(
+        window,
+        RectI::new(rect.right - width, rect.top, rect.right, rect.bottom),
+    );
+}
+
+unsafe fn invalidate(window: HWND, rect: RectI) {
+    if rect.is_empty() {
+        return;
+    }
+    let rect = to_win_rect(rect);
+    InvalidateRect(window, &rect, 0);
+}
+
+fn intersect(a: RectI, b: RectI) -> RectI {
+    RectI::new(
+        a.left.max(b.left),
+        a.top.max(b.top),
+        a.right.min(b.right),
+        a.bottom.min(b.bottom),
+    )
+}
+
+fn to_win_rect(rect: RectI) -> RECT {
+    RECT {
+        left: rect.left,
+        top: rect.top,
+        right: rect.right,
+        bottom: rect.bottom,
+    }
 }
 
 unsafe fn finish_selection(window: HWND, point: PointI) {
