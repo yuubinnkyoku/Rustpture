@@ -3,13 +3,11 @@ use std::mem::{size_of, zeroed};
 use std::ptr::{null, null_mut};
 
 use windows_sys::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, WPARAM};
-use windows_sys::Win32::Graphics::Gdi::{BeginPaint, EndPaint, PAINTSTRUCT};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    CS_DBLCLKS, CW_USEDEFAULT, CreateWindowExW, DefWindowProcW, DestroyWindow, GWLP_USERDATA,
+    CS_DBLCLKS, CreateWindowExW, DefWindowProcW, DestroyWindow, GWLP_USERDATA,
     GetWindowLongPtrW, IDC_ARROW, IDI_APPLICATION, LoadCursorW, LoadIconW, PostQuitMessage,
-    RegisterClassExW, SC_MAXIMIZE, SC_RESTORE, SW_SHOWMINNOACTIVE, SetWindowLongPtrW, ShowWindow,
-    WM_CLOSE, WM_DESTROY, WM_DISPLAYCHANGE, WM_NCDESTROY, WM_PAINT, WM_SYSCOMMAND, WNDCLASSEXW,
-    WS_OVERLAPPEDWINDOW,
+    RegisterClassExW, SetWindowLongPtrW, WM_CLOSE, WM_DESTROY, WM_DISPLAYCHANGE, WM_NCDESTROY,
+    WNDCLASSEXW, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_POPUP,
 };
 
 use super::overlay;
@@ -51,15 +49,19 @@ pub unsafe fn register_class(instance: HINSTANCE) -> io::Result<()> {
 pub unsafe fn create(instance: HINSTANCE) -> io::Result<HWND> {
     let class_name = wide_null(CONTROLLER_CLASS);
     let title = wide_null(APP_TITLE);
+
+    // The controller only exists for single-instance routing and display-change
+    // notifications. Keeping it as a hidden tool window preserves the warm resident
+    // process without creating a phantom taskbar button after all pin windows close.
     let window = CreateWindowExW(
-        0,
+        WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
         class_name.as_ptr(),
         title.as_ptr(),
-        WS_OVERLAPPEDWINDOW,
-        CW_USEDEFAULT,
-        CW_USEDEFAULT,
-        360,
-        160,
+        WS_POPUP,
+        0,
+        0,
+        0,
+        0,
         null_mut(),
         null_mut(),
         instance,
@@ -76,10 +78,6 @@ pub unsafe fn attach_state(window: HWND, overlay: HWND) {
     SetWindowLongPtrW(window, GWLP_USERDATA, Box::into_raw(state) as isize);
 }
 
-pub unsafe fn show_resident(window: HWND) {
-    ShowWindow(window, SW_SHOWMINNOACTIVE);
-}
-
 unsafe fn state_ptr(window: HWND) -> *mut ControllerState {
     GetWindowLongPtrW(window, GWLP_USERDATA) as *mut ControllerState
 }
@@ -89,8 +87,7 @@ unsafe fn begin_capture(window: HWND) {
     if pointer.is_null() {
         return;
     }
-    let overlay = (*pointer).overlay;
-    overlay::begin_capture(overlay);
+    overlay::begin_capture((*pointer).overlay);
 }
 
 unsafe extern "system" fn window_proc(
@@ -104,26 +101,11 @@ unsafe extern "system" fn window_proc(
             begin_capture(window);
             0
         }
-        WM_SYSCOMMAND => {
-            let command = (wparam as u32) & 0xfff0;
-            if command == SC_RESTORE || command == SC_MAXIMIZE {
-                begin_capture(window);
-                return 0;
-            }
-            DefWindowProcW(window, message, wparam, lparam)
-        }
         WM_DISPLAYCHANGE => {
             let pointer = state_ptr(window);
             if !pointer.is_null() {
-                let overlay = (*pointer).overlay;
-                overlay::refresh_geometry(overlay);
+                overlay::refresh_geometry((*pointer).overlay);
             }
-            0
-        }
-        WM_PAINT => {
-            let mut paint: PAINTSTRUCT = zeroed();
-            BeginPaint(window, &mut paint);
-            EndPaint(window, &paint);
             0
         }
         WM_CLOSE => {
