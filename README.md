@@ -9,7 +9,7 @@ Rustpture は、Windows向けの軽量な画面範囲ピン留めツールです
 - 常駐中はWin32のメッセージ待ちだけ。タスクバーをクリックすると、事前作成済みの選択画面を即座に表示
 - マルチモニターと負の画面座標に対応
 - Per-Monitor V2 DPI対応。異なる拡大率のモニターへ移しても、画像の表示範囲とズーム率を維持
-- タイトルバー付き・常に手前の画像ウィンドウ
+- Windows標準のタイトルバー（最小化・最大化・閉じるボタン）を備えた、常に手前の画像ウィンドウ
 - 画像ウィンドウを複数表示可能
 - WebView、GUIフレームワーク、常駐タイマーなし
 - MIT License
@@ -107,8 +107,9 @@ Rustpture.exe --quit          常駐中のRustptureを終了
 └─ 選択確定後に非表示 → DwmFlush → GDI BitBlt
 
 ピン留め窓
-├─ WS_CAPTION | WS_SYSMENU（タイトルバーと閉じるボタン）
+├─ WS_OVERLAPPEDWINDOW（Windows標準タイトルバーと −・□・×）
 ├─ WS_EX_LAYERED（透明度）
+├─ WS_EX_NOACTIVATE（表示時に作業中のアプリからフォーカスを奪わない）
 ├─ WS_EX_TOPMOST（常に手前）
 └─ GDI StretchBltで元画像を非破壊表示
 ```
