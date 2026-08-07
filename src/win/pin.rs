@@ -10,15 +10,15 @@ use windows_sys::Win32::Graphics::Gdi::{
 use windows_sys::Win32::System::SystemServices::MK_CONTROL;
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{ReleaseCapture, SetCapture};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    AdjustWindowRectEx, CS_DBLCLKS, CreateWindowExW, DefWindowProcW, DestroyWindow, GWLP_USERDATA,
-    GetClientRect, GetCursorPos, GetWindowLongPtrW, GetWindowRect, HWND_NOTOPMOST, HWND_TOPMOST,
-    IDC_ARROW, LWA_ALPHA, LoadCursorW, MB_ICONERROR, MB_OK, MessageBoxW, PostMessageW,
-    RegisterClassExW, SW_SHOWNOACTIVATE, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER,
-    SWP_SHOWWINDOW, SetForegroundWindow, SetLayeredWindowAttributes, SetWindowLongPtrW,
-    SetWindowPos, ShowWindow, WM_CAPTURECHANGED, WM_CLOSE, WM_CONTEXTMENU, WM_DPICHANGED,
-    WM_ERASEBKGND, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL,
-    WM_NCDESTROY, WM_PAINT, WNDCLASSEXW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOPMOST,
-    WS_OVERLAPPEDWINDOW,
+    AdjustWindowRectEx, CS_DBLCLKS, CS_HREDRAW, CS_VREDRAW, CreateWindowExW, DefWindowProcW,
+    DestroyWindow, GWLP_USERDATA, GetClientRect, GetCursorPos, GetWindowLongPtrW, GetWindowRect,
+    HWND_NOTOPMOST, HWND_TOPMOST, IDC_ARROW, LWA_ALPHA, LoadCursorW, MB_ICONERROR, MB_OK,
+    MessageBoxW, PostMessageW, RegisterClassExW, SIZE_MINIMIZED, SW_SHOWNOACTIVATE, SWP_NOACTIVATE,
+    SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SWP_SHOWWINDOW, SetForegroundWindow,
+    SetLayeredWindowAttributes, SetWindowLongPtrW, SetWindowPos, ShowWindow, WM_CAPTURECHANGED,
+    WM_CLOSE, WM_CONTEXTMENU, WM_DPICHANGED, WM_ERASEBKGND, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN,
+    WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCDESTROY, WM_PAINT, WM_SIZE, WNDCLASSEXW,
+    WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOPMOST, WS_OVERLAPPEDWINDOW,
 };
 
 use crate::geometry::{PointI, RectI, scaled_dimension, zoom_around_point};
@@ -50,7 +50,7 @@ pub unsafe fn register_class(instance: HINSTANCE) -> io::Result<()> {
     let class_name = wide_null(PIN_CLASS);
     let mut class: WNDCLASSEXW = zeroed();
     class.cbSize = size_of::<WNDCLASSEXW>() as u32;
-    class.style = CS_DBLCLKS;
+    class.style = CS_DBLCLKS | CS_HREDRAW | CS_VREDRAW;
     class.lpfnWndProc = Some(window_proc);
     class.hInstance = instance;
     class.hCursor = LoadCursorW(null_mut(), IDC_ARROW);
@@ -164,6 +164,15 @@ unsafe extern "system" fn window_proc(
             0
         }
         WM_ERASEBKGND => 1,
+        WM_SIZE => {
+            if wparam != SIZE_MINIMIZED as usize {
+                sync_scale_from_client(window);
+                // The bitmap is scaled to the whole client area. A resize therefore
+                // changes every destination pixel, not only the newly exposed strip.
+                InvalidateRect(window, null(), 0);
+            }
+            0
+        }
         WM_LBUTTONDOWN => {
             begin_drag(window);
             0
@@ -215,6 +224,29 @@ unsafe extern "system" fn window_proc(
         }
         _ => DefWindowProcW(window, message, wparam, lparam),
     }
+}
+
+unsafe fn sync_scale_from_client(window: HWND) {
+    let pointer = state_ptr(window);
+    if pointer.is_null() {
+        return;
+    }
+
+    let mut client: RECT = zeroed();
+    if GetClientRect(window, &mut client) == 0 {
+        return;
+    }
+    let width = client.right - client.left;
+    let height = client.bottom - client.top;
+    if width <= 0 || height <= 0 {
+        return;
+    }
+
+    let source_width = (*pointer).bitmap.width().max(1);
+    let source_height = (*pointer).bitmap.height().max(1);
+    (*pointer).scale = (width as f64 / source_width as f64)
+        .min(height as f64 / source_height as f64)
+        .clamp(MIN_SCALE, MAX_SCALE);
 }
 
 unsafe fn paint(window: HWND) {
