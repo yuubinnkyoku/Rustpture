@@ -1,13 +1,14 @@
-name: Manual source formatter
+name: Apply resize repaint fix
 
 on:
-  workflow_dispatch:
+  push:
+    branches: [main]
 
 permissions:
   contents: write
 
 jobs:
-  format:
+  patch:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -18,18 +19,65 @@ jobs:
         with:
           components: rustfmt
 
-      - name: Format source
-        run: cargo fmt --all
+      - name: Patch pin window resize handling
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
 
-      - name: Commit formatting when needed
+          path = Path('src/win/pin.rs')
+          source = path.read_text(encoding='utf-8')
+
+          replacements = [
+              (
+                  'AdjustWindowRectEx, CS_DBLCLKS, CreateWindowExW, DefWindowProcW, DestroyWindow, GWLP_USERDATA,',
+                  'AdjustWindowRectEx, CS_DBLCLKS, CS_HREDRAW, CS_VREDRAW, CreateWindowExW, DefWindowProcW, DestroyWindow, GWLP_USERDATA,',
+              ),
+              (
+                  'RegisterClassExW, SW_SHOWNOACTIVATE, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER,',
+                  'RegisterClassExW, SIZE_MINIMIZED, SW_SHOWNOACTIVATE, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER,',
+              ),
+              (
+                  'WM_NCDESTROY, WM_PAINT, WNDCLASSEXW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOPMOST,',
+                  'WM_NCDESTROY, WM_PAINT, WM_SIZE, WNDCLASSEXW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOPMOST,',
+              ),
+              (
+                  '    class.style = CS_DBLCLKS;',
+                  '    class.style = CS_DBLCLKS | CS_HREDRAW | CS_VREDRAW;',
+              ),
+              (
+                  '        WM_ERASEBKGND => 1,\n        WM_LBUTTONDOWN => {',
+                  '''        WM_ERASEBKGND => 1,\n        WM_SIZE => {\n            if wparam != SIZE_MINIMIZED as usize {\n                sync_scale_from_client(window);\n                // The bitmap is scaled to the whole client area. A resize therefore\n                // changes every destination pixel, not only the newly exposed strip.\n                InvalidateRect(window, null(), 0);\n            }\n            0\n        }\n        WM_LBUTTONDOWN => {''',
+              ),
+              (
+                  'unsafe fn paint(window: HWND) {',
+                  '''unsafe fn sync_scale_from_client(window: HWND) {\n    let pointer = state_ptr(window);\n    if pointer.is_null() {\n        return;\n    }\n\n    let mut client: RECT = zeroed();\n    if GetClientRect(window, &mut client) == 0 {\n        return;\n    }\n    let width = client.right - client.left;\n    let height = client.bottom - client.top;\n    if width <= 0 || height <= 0 {\n        return;\n    }\n\n    let source_width = (*pointer).bitmap.width().max(1);\n    let source_height = (*pointer).bitmap.height().max(1);\n    (*pointer).scale = (width as f64 / source_width as f64)\n        .min(height as f64 / source_height as f64)\n        .clamp(MIN_SCALE, MAX_SCALE);\n}\n\nunsafe fn paint(window: HWND) {''',
+              ),
+          ]
+
+          changed = False
+          for old, new in replacements:
+              if new in source:
+                  continue
+              if old not in source:
+                  raise SystemExit(f'Expected source fragment not found: {old!r}')
+              source = source.replace(old, new, 1)
+              changed = True
+
+          if changed:
+              path.write_text(source, encoding='utf-8', newline='\n')
+          PY
+          cargo fmt --all
+
+      - name: Commit fix when needed
         shell: bash
         run: |
           if git diff --quiet; then
-            echo "Source is already formatted."
+            echo "Resize repaint fix is already applied."
             exit 0
           fi
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add -A
-          git commit -m 'Apply cargo fmt'
+          git add src/win/pin.rs
+          git commit -m 'Fix repaint artifacts after resizing pin windows'
           git push origin HEAD:main
