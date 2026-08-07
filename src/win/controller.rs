@@ -4,10 +4,10 @@ use std::ptr::{null, null_mut};
 
 use windows_sys::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, WPARAM};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    CS_DBLCLKS, CreateWindowExW, DefWindowProcW, DestroyWindow, GWLP_USERDATA,
-    GetWindowLongPtrW, IDC_ARROW, IDI_APPLICATION, LoadCursorW, LoadIconW, PostQuitMessage,
-    RegisterClassExW, SetWindowLongPtrW, WM_CLOSE, WM_DESTROY, WM_DISPLAYCHANGE, WM_NCDESTROY,
-    WNDCLASSEXW, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_POPUP,
+    CS_DBLCLKS, CreateWindowExW, DefWindowProcW, DestroyWindow, GWLP_USERDATA, GetWindowLongPtrW,
+    IDC_ARROW, IDI_APPLICATION, LoadCursorW, LoadIconW, PostQuitMessage, RegisterClassExW,
+    SetWindowLongPtrW, WM_CLOSE, WM_DESTROY, WM_DISPLAYCHANGE, WM_NCDESTROY, WNDCLASSEXW,
+    WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_POPUP,
 };
 
 use super::overlay;
