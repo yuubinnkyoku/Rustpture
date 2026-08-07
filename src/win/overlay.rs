@@ -12,15 +12,14 @@ use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
     ReleaseCapture, SetActiveWindow, SetCapture, SetFocus, VK_ESCAPE,
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    CS_DBLCLKS, CreateWindowExW, DefWindowProcW, DestroyWindow, GWLP_USERDATA, GetClientRect,
-    GetCursorPos, GetSystemMetrics, GetWindowLongPtrW, HWND_TOPMOST, IDC_CROSS, IsWindowVisible,
-    LWA_ALPHA, LWA_COLORKEY, LoadCursorW, MB_ICONERROR, MB_OK, MessageBoxW, MoveWindow,
-    RDW_NOERASE, RDW_UPDATENOW, RedrawWindow, RegisterClassExW, SM_CXVIRTUALSCREEN,
-    SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN, SW_HIDE, SWP_SHOWWINDOW,
-    SetForegroundWindow, SetLayeredWindowAttributes, SetWindowLongPtrW, SetWindowPos, ShowWindow,
-    WM_CANCELMODE, WM_CAPTURECHANGED, WM_ERASEBKGND, WM_KEYDOWN, WM_KILLFOCUS, WM_LBUTTONDOWN,
-    WM_LBUTTONUP, WM_MOUSEMOVE, WM_NCDESTROY, WM_PAINT, WNDCLASSEXW, WS_EX_LAYERED,
-    WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
+    CS_DBLCLKS, CreateWindowExW, DefWindowProcW, DestroyWindow, GWLP_USERDATA, GetCursorPos,
+    GetSystemMetrics, GetWindowLongPtrW, HWND_TOPMOST, IDC_CROSS, IsWindowVisible, LWA_ALPHA,
+    LWA_COLORKEY, LoadCursorW, MB_ICONERROR, MB_OK, MessageBoxW, MoveWindow, RegisterClassExW,
+    SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN, SW_HIDE,
+    SWP_SHOWWINDOW, SetForegroundWindow, SetLayeredWindowAttributes, SetWindowLongPtrW,
+    SetWindowPos, ShowWindow, WM_CANCELMODE, WM_CAPTURECHANGED, WM_ERASEBKGND, WM_KEYDOWN,
+    WM_KILLFOCUS, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_NCDESTROY, WM_PAINT,
+    WNDCLASSEXW, WS_EX_LAYERED, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
 };
 
 use crate::geometry::{PointI, RectI};
@@ -321,9 +320,9 @@ unsafe fn redraw_selection_delta(window: HWND, old: RectI, new: RectI) {
     invalidate_frame(window, old);
     invalidate_frame(window, new);
 
-    // WM_MOUSEMOVE messages can arrive faster than ordinary WM_PAINT dispatch. Flush
-    // only the already-invalid update region now so the border stays under the cursor.
-    RedrawWindow(window, null(), null_mut(), RDW_NOERASE | RDW_UPDATENOW);
+    // UpdateWindow processes the already-invalid update region immediately without
+    // invalidating the rest of the virtual desktop, keeping the border under the cursor.
+    UpdateWindow(window);
 }
 
 unsafe fn invalidate_difference(window: HWND, rect: RectI, other: RectI) {
