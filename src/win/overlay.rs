@@ -337,15 +337,31 @@ unsafe fn invalidate_difference(window: HWND, rect: RectI, other: RectI) {
         return;
     }
 
-    invalidate(window, RectI::new(rect.left, rect.top, rect.right, intersection.top));
-    invalidate(window, RectI::new(rect.left, intersection.bottom, rect.right, rect.bottom));
     invalidate(
         window,
-        RectI::new(rect.left, intersection.top, intersection.left, intersection.bottom),
+        RectI::new(rect.left, rect.top, rect.right, intersection.top),
     );
     invalidate(
         window,
-        RectI::new(intersection.right, intersection.top, rect.right, intersection.bottom),
+        RectI::new(rect.left, intersection.bottom, rect.right, rect.bottom),
+    );
+    invalidate(
+        window,
+        RectI::new(
+            rect.left,
+            intersection.top,
+            intersection.left,
+            intersection.bottom,
+        ),
+    );
+    invalidate(
+        window,
+        RectI::new(
+            intersection.right,
+            intersection.top,
+            rect.right,
+            intersection.bottom,
+        ),
     );
 }
 
@@ -356,12 +372,18 @@ unsafe fn invalidate_frame(window: HWND, rect: RectI) {
 
     let width = BORDER_WIDTH.min(rect.width()).max(1);
     let height = BORDER_WIDTH.min(rect.height()).max(1);
-    invalidate(window, RectI::new(rect.left, rect.top, rect.right, rect.top + height));
+    invalidate(
+        window,
+        RectI::new(rect.left, rect.top, rect.right, rect.top + height),
+    );
     invalidate(
         window,
         RectI::new(rect.left, rect.bottom - height, rect.right, rect.bottom),
     );
-    invalidate(window, RectI::new(rect.left, rect.top, rect.left + width, rect.bottom));
+    invalidate(
+        window,
+        RectI::new(rect.left, rect.top, rect.left + width, rect.bottom),
+    );
     invalidate(
         window,
         RectI::new(rect.right - width, rect.top, rect.right, rect.bottom),
