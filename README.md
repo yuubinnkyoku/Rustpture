@@ -12,7 +12,7 @@ Rustpture は、Windows向けの軽量な画面範囲ピン留めツールです
 - Windows標準のタイトルバー（最小化・最大化・閉じるボタン）を備えた、常に手前の画像ウィンドウ
 - 画像ウィンドウを複数表示可能
 - WebView、GUIフレームワーク、常駐タイマーなし
-- MIT License
+- GPL-3.0-or-later
 
 ## 操作
 
@@ -130,3 +130,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\check.ps1
 
 実機確認項目は [`docs/TESTING.md`](docs/TESTING.md) にあります。
 検証範囲とWindows CIについては [`docs/VALIDATION.md`](docs/VALIDATION.md) にまとめています。
+
+## ライセンス
+
+Rustpture は **GNU General Public License v3.0 or later (`GPL-3.0-or-later`)** の下で公開されています。詳細は [`LICENSE`](LICENSE) を参照してください。
