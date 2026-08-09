@@ -8,7 +8,7 @@ use windows_sys::Win32::System::Registry::{HKEY_CURRENT_USER, RRF_RT_REG_DWORD, 
 use windows_sys::Win32::System::Threading::GetCurrentThreadId;
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     CWPSTRUCT, CallNextHookEx, GetClassNameW, SetWindowsHookExW, WH_CALLWNDPROC, WM_CREATE,
-    WM_SETTINGCHANGE, WM_THEMECHANGED,
+    WM_SETTINGCHANGE, WM_THEMECHANGED, WM_WINDOWPOSCHANGED,
 };
 
 use super::PIN_CLASS;
@@ -34,8 +34,10 @@ pub unsafe fn install_current_thread_hook() {
 unsafe extern "system" fn call_wnd_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     if code >= 0 && lparam != 0 {
         let info = unsafe { &*(lparam as *const CWPSTRUCT) };
-        if matches!(info.message, WM_CREATE | WM_SETTINGCHANGE | WM_THEMECHANGED)
-            && unsafe { is_pin_window(info.hwnd) }
+        if matches!(
+            info.message,
+            WM_CREATE | WM_WINDOWPOSCHANGED | WM_SETTINGCHANGE | WM_THEMECHANGED
+        ) && unsafe { is_pin_window(info.hwnd) }
         {
             unsafe { apply_title_bar_theme(info.hwnd) };
         }
@@ -81,7 +83,6 @@ unsafe fn apply_title_bar_theme(window: HWND) {
 }
 
 unsafe fn system_prefers_dark_apps() -> bool {
-    // This is a raw string, so registry separators are written as a single '\\'.
     let path = wide_null(r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize");
     let name = wide_null("AppsUseLightTheme");
     let mut value = 1u32;
