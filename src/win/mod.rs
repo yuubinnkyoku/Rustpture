@@ -1,5 +1,6 @@
 mod bitmap;
 mod controller;
+mod lifecycle;
 mod menu;
 mod overlay;
 mod pin;
@@ -24,6 +25,10 @@ pub const PIN_CLASS: &str = "Rustpture.Pin.0.1";
 pub const APP_TITLE: &str = "Rustpture — クリックしてキャプチャ";
 
 pub const WM_APP_BEGIN_CAPTURE: u32 = 0x8000 + 1;
+pub const WM_APP_PIN_OPENED: u32 = 0x8000 + 2;
+pub const WM_APP_PIN_CLOSED: u32 = 0x8000 + 3;
+pub const WM_APP_CAPTURE_FINISHED: u32 = 0x8000 + 4;
+pub const WM_APP_CHECK_IDLE: u32 = 0x8000 + 5;
 
 pub fn run() -> io::Result<()> {
     let command = Command::parse();
@@ -39,8 +44,8 @@ pub fn run() -> io::Result<()> {
                 }
                 Command::Capture => {
                     // A taskbar-launched helper is usually allowed to transfer
-                    // foreground activation to the resident process. This keeps
-                    // the pre-created overlay focused so Esc works immediately.
+                    // foreground activation to the existing process. This keeps
+                    // the capture overlay focused so Esc works immediately.
                     let mut process_id = 0;
                     GetWindowThreadProcessId(existing, &mut process_id);
                     if process_id != 0 {
@@ -65,6 +70,7 @@ pub fn run() -> io::Result<()> {
         overlay::register_class(instance)?;
         pin::register_class(instance)?;
         theme::install_current_thread_hook();
+        lifecycle::install_current_thread_hook();
 
         let controller = controller::create(instance)?;
         let overlay = match overlay::create(instance, controller) {
@@ -74,7 +80,7 @@ pub fn run() -> io::Result<()> {
                 return Err(error);
             }
         };
-        controller::attach_state(controller, overlay);
+        controller::attach_state(controller, overlay, command == Command::Background);
 
         if command == Command::Capture {
             PostMessageW(controller, WM_APP_BEGIN_CAPTURE, 0, 0);
