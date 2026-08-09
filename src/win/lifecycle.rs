@@ -1,10 +1,14 @@
+use std::collections::HashMap;
 use std::ptr::{null, null_mut};
+use std::sync::{Mutex, OnceLock};
 
-use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
+use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows_sys::Win32::System::Threading::GetCurrentThreadId;
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    CWPSTRUCT, CallNextHookEx, FindWindowW, GetClassNameW, PostMessageW, SetWindowsHookExW,
-    WH_CALLWNDPROC, WM_CREATE, WM_NCDESTROY, WM_SHOWWINDOW,
+    CWPSTRUCT, CallNextHookEx, FindWindowW, GetClassNameW, GetClientRect, GetWindowRect,
+    PostMessageW, SetWindowsHookExW, WH_CALLWNDPROC, WMSZ_BOTTOM, WMSZ_BOTTOMLEFT,
+    WMSZ_BOTTOMRIGHT, WMSZ_LEFT, WMSZ_RIGHT, WMSZ_TOP, WMSZ_TOPLEFT, WMSZ_TOPRIGHT, WM_CREATE,
+    WM_NCDESTROY, WM_SHOWWINDOW, WM_SIZING, WM_WINDOWPOSCHANGED,
 };
 
 use super::wide::wide_null;
@@ -14,6 +18,7 @@ use super::{
 };
 
 const CLASS_NAME_CAPACITY: usize = 64;
+static PIN_ASPECT_RATIOS: OnceLock<Mutex<HashMap<usize, f64>>> = OnceLock::new();
 
 pub unsafe fn install_current_thread_hook() {
     // This hook only observes windows created on Rustpture's GUI thread. Windows
@@ -32,15 +37,31 @@ unsafe extern "system" fn call_wnd_proc(code: i32, wparam: WPARAM, lparam: LPARA
         let class = window_class(info.hwnd);
 
         if class.as_deref() == Some(PIN_CLASS) {
-            // Count a pin as soon as CreateWindowExW reaches WM_CREATE. A pin can
-            // become visible through SetWindowPos(..., SWP_SHOWWINDOW) without a
-            // dependable WM_SHOWWINDOW notification, which previously left
-            // pin_count at zero and made the controller exit immediately after
-            // a successful capture.
-            if info.message == WM_CREATE {
-                notify_controller(WM_APP_PIN_OPENED);
-            } else if info.message == WM_NCDESTROY {
-                notify_controller(WM_APP_PIN_CLOSED);
+            match info.message {
+                WM_CREATE => {
+                    // Count the pin immediately and remember its original client-area
+                    // aspect ratio before the user can resize or maximize it.
+                    notify_controller(WM_APP_PIN_OPENED);
+                    remember_pin_aspect_ratio(info.hwnd);
+                }
+                WM_WINDOWPOSCHANGED => {
+                    // WM_CREATE can arrive before the final client geometry exists on
+                    // some Windows configurations, so take one more opportunity to
+                    // record the ratio. Existing entries are never overwritten.
+                    remember_pin_aspect_ratio(info.hwnd);
+                }
+                WM_SIZING if info.lParam != 0 => {
+                    constrain_pin_sizing(
+                        info.hwnd,
+                        info.wParam as u32,
+                        info.lParam as *mut RECT,
+                    );
+                }
+                WM_NCDESTROY => {
+                    forget_pin_aspect_ratio(info.hwnd);
+                    notify_controller(WM_APP_PIN_CLOSED);
+                }
+                _ => {}
             }
         } else if class.as_deref() == Some(OVERLAY_CLASS)
             && info.message == WM_SHOWWINDOW
@@ -54,6 +75,94 @@ unsafe extern "system" fn call_wnd_proc(code: i32, wparam: WPARAM, lparam: LPARA
     }
 
     CallNextHookEx(null_mut(), code, wparam, lparam)
+}
+
+fn aspect_ratios() -> &'static Mutex<HashMap<usize, f64>> {
+    PIN_ASPECT_RATIOS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+unsafe fn remember_pin_aspect_ratio(window: HWND) {
+    let key = window as usize;
+    let mut ratios = aspect_ratios().lock().unwrap_or_else(|error| error.into_inner());
+    if ratios.contains_key(&key) {
+        return;
+    }
+
+    let mut client: RECT = std::mem::zeroed();
+    if GetClientRect(window, &mut client) == 0 {
+        return;
+    }
+    let width = client.right - client.left;
+    let height = client.bottom - client.top;
+    if width <= 0 || height <= 0 {
+        return;
+    }
+
+    ratios.insert(key, width as f64 / height as f64);
+}
+
+fn forget_pin_aspect_ratio(window: HWND) {
+    let mut ratios = aspect_ratios().lock().unwrap_or_else(|error| error.into_inner());
+    ratios.remove(&(window as usize));
+}
+
+unsafe fn constrain_pin_sizing(window: HWND, edge: u32, proposed: *mut RECT) {
+    if proposed.is_null() {
+        return;
+    }
+
+    let ratio = {
+        let ratios = aspect_ratios().lock().unwrap_or_else(|error| error.into_inner());
+        ratios.get(&(window as usize)).copied()
+    };
+    let Some(ratio) = ratio else {
+        remember_pin_aspect_ratio(window);
+        return;
+    };
+    if !ratio.is_finite() || ratio <= 0.0 {
+        return;
+    }
+
+    let mut outer: RECT = std::mem::zeroed();
+    let mut client: RECT = std::mem::zeroed();
+    if GetWindowRect(window, &mut outer) == 0 || GetClientRect(window, &mut client) == 0 {
+        return;
+    }
+
+    let frame_width = (outer.right - outer.left) - (client.right - client.left);
+    let frame_height = (outer.bottom - outer.top) - (client.bottom - client.top);
+    let rect = &mut *proposed;
+    let client_width = ((rect.right - rect.left) - frame_width).max(1);
+    let client_height = ((rect.bottom - rect.top) - frame_height).max(1);
+
+    let width_drives = match edge {
+        WMSZ_LEFT | WMSZ_RIGHT => true,
+        WMSZ_TOP | WMSZ_BOTTOM => false,
+        WMSZ_TOPLEFT | WMSZ_TOPRIGHT | WMSZ_BOTTOMLEFT | WMSZ_BOTTOMRIGHT => {
+            let height_from_width = (client_width as f64 / ratio).round() as i32;
+            let width_from_height = (client_height as f64 * ratio).round() as i32;
+            (height_from_width - client_height).abs() <= (width_from_height - client_width).abs()
+        }
+        _ => return,
+    };
+
+    if width_drives {
+        let target_client_height = (client_width as f64 / ratio).round().max(1.0) as i32;
+        let target_height = target_client_height + frame_height;
+        if matches!(edge, WMSZ_TOP | WMSZ_TOPLEFT | WMSZ_TOPRIGHT) {
+            rect.top = rect.bottom - target_height;
+        } else {
+            rect.bottom = rect.top + target_height;
+        }
+    } else {
+        let target_client_width = (client_height as f64 * ratio).round().max(1.0) as i32;
+        let target_width = target_client_width + frame_width;
+        if matches!(edge, WMSZ_LEFT | WMSZ_TOPLEFT | WMSZ_BOTTOMLEFT) {
+            rect.left = rect.right - target_width;
+        } else {
+            rect.right = rect.left + target_width;
+        }
+    }
 }
 
 unsafe fn notify_controller(message: u32) {
