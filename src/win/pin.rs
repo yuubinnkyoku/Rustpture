@@ -17,8 +17,10 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
     SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SWP_SHOWWINDOW, SetForegroundWindow,
     SetLayeredWindowAttributes, SetWindowLongPtrW, SetWindowPos, ShowWindow, WM_CAPTURECHANGED,
     WM_CLOSE, WM_CONTEXTMENU, WM_DPICHANGED, WM_ERASEBKGND, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN,
-    WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCDESTROY, WM_PAINT, WM_SIZE, WNDCLASSEXW,
-    WS_EX_APPWINDOW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOPMOST, WS_OVERLAPPEDWINDOW,
+    WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCDESTROY, WM_PAINT, WM_SIZE, WM_SIZING,
+    WMSZ_BOTTOM, WMSZ_BOTTOMLEFT, WMSZ_BOTTOMRIGHT, WMSZ_LEFT, WMSZ_RIGHT, WMSZ_TOP, WMSZ_TOPLEFT,
+    WMSZ_TOPRIGHT, WNDCLASSEXW, WS_EX_APPWINDOW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOPMOST,
+    WS_OVERLAPPEDWINDOW,
 };
 
 use crate::geometry::{PointI, RectI, scaled_dimension, zoom_around_point};
@@ -173,6 +175,12 @@ unsafe extern "system" fn window_proc(
             }
             0
         }
+        WM_SIZING => {
+            if lparam != 0 {
+                constrain_sizing(window, wparam as u32, lparam as *mut RECT);
+            }
+            1
+        }
         WM_LBUTTONDOWN => {
             begin_drag(window);
             0
@@ -223,6 +231,54 @@ unsafe extern "system" fn window_proc(
             DefWindowProcW(window, message, wparam, lparam)
         }
         _ => DefWindowProcW(window, message, wparam, lparam),
+    }
+}
+
+unsafe fn constrain_sizing(window: HWND, edge: u32, proposed: *mut RECT) {
+    if proposed.is_null() {
+        return;
+    }
+
+    let pointer = state_ptr(window);
+    if pointer.is_null() {
+        return;
+    }
+
+    let source_width = (*pointer).bitmap.width().max(1);
+    let source_height = (*pointer).bitmap.height().max(1);
+    let ratio = source_width as f64 / source_height as f64;
+    let (frame_width, frame_height) = window_frame_size();
+    let rect = &mut *proposed;
+    let client_width = ((rect.right - rect.left) - frame_width).max(1);
+    let client_height = ((rect.bottom - rect.top) - frame_height).max(1);
+
+    let width_drives = match edge {
+        WMSZ_LEFT | WMSZ_RIGHT => true,
+        WMSZ_TOP | WMSZ_BOTTOM => false,
+        WMSZ_TOPLEFT | WMSZ_TOPRIGHT | WMSZ_BOTTOMLEFT | WMSZ_BOTTOMRIGHT => {
+            let height_from_width = (client_width as f64 / ratio).round() as i32;
+            let width_from_height = (client_height as f64 * ratio).round() as i32;
+            (height_from_width - client_height).abs() <= (width_from_height - client_width).abs()
+        }
+        _ => return,
+    };
+
+    if width_drives {
+        let target_client_height = (client_width as f64 / ratio).round().max(1.0) as i32;
+        let target_height = target_client_height + frame_height;
+        if matches!(edge, WMSZ_TOP | WMSZ_TOPLEFT | WMSZ_TOPRIGHT) {
+            rect.top = rect.bottom - target_height;
+        } else {
+            rect.bottom = rect.top + target_height;
+        }
+    } else {
+        let target_client_width = (client_height as f64 * ratio).round().max(1.0) as i32;
+        let target_width = target_client_width + frame_width;
+        if matches!(edge, WMSZ_LEFT | WMSZ_TOPLEFT | WMSZ_BOTTOMLEFT) {
+            rect.left = rect.right - target_width;
+        } else {
+            rect.right = rect.left + target_width;
+        }
     }
 }
 
