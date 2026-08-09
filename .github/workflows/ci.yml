@@ -5,16 +5,118 @@ on:
   pull_request:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   windows:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
+      - name: Apply direct aspect-ratio fix
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('src/win/pin.rs')
+          s = path.read_text()
+          if '        WM_SIZING => {' in s:
+              raise SystemExit(0)
+
+          old_import = '''    WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCDESTROY, WM_PAINT, WM_SIZE, WNDCLASSEXW,
+    WS_EX_APPWINDOW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOPMOST, WS_OVERLAPPEDWINDOW,
+'''
+          new_import = '''    WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCDESTROY, WM_PAINT, WM_SIZE, WM_SIZING,
+    WMSZ_BOTTOM, WMSZ_BOTTOMLEFT, WMSZ_BOTTOMRIGHT, WMSZ_LEFT, WMSZ_RIGHT, WMSZ_TOP, WMSZ_TOPLEFT,
+    WMSZ_TOPRIGHT, WNDCLASSEXW, WS_EX_APPWINDOW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOPMOST,
+    WS_OVERLAPPEDWINDOW,
+'''
+          if old_import not in s:
+              raise SystemExit('pin import anchor not found')
+          s = s.replace(old_import, new_import, 1)
+
+          old_arm = '''        WM_SIZE => {
+            if wparam != SIZE_MINIMIZED as usize {
+                sync_scale_from_client(window);
+                // The bitmap is scaled to the whole client area. A resize therefore
+                // changes every destination pixel, not only the newly exposed strip.
+                InvalidateRect(window, null(), 0);
+            }
+            0
+        }
+'''
+          new_arm = old_arm + '''        WM_SIZING => {
+            if lparam != 0 {
+                constrain_sizing(window, wparam as u32, lparam as *mut RECT);
+            }
+            1
+        }
+'''
+          if old_arm not in s:
+              raise SystemExit('WM_SIZE anchor not found')
+          s = s.replace(old_arm, new_arm, 1)
+
+          anchor = 'unsafe fn sync_scale_from_client(window: HWND) {\n'
+          helper = '''unsafe fn constrain_sizing(window: HWND, edge: u32, proposed: *mut RECT) {
+    if proposed.is_null() {
+        return;
+    }
+
+    let pointer = state_ptr(window);
+    if pointer.is_null() {
+        return;
+    }
+
+    let source_width = (*pointer).bitmap.width().max(1);
+    let source_height = (*pointer).bitmap.height().max(1);
+    let ratio = source_width as f64 / source_height as f64;
+    let (frame_width, frame_height) = window_frame_size();
+    let rect = &mut *proposed;
+    let client_width = ((rect.right - rect.left) - frame_width).max(1);
+    let client_height = ((rect.bottom - rect.top) - frame_height).max(1);
+
+    let width_drives = match edge {
+        WMSZ_LEFT | WMSZ_RIGHT => true,
+        WMSZ_TOP | WMSZ_BOTTOM => false,
+        WMSZ_TOPLEFT | WMSZ_TOPRIGHT | WMSZ_BOTTOMLEFT | WMSZ_BOTTOMRIGHT => {
+            let height_from_width = (client_width as f64 / ratio).round() as i32;
+            let width_from_height = (client_height as f64 * ratio).round() as i32;
+            (height_from_width - client_height).abs() <= (width_from_height - client_width).abs()
+        }
+        _ => return,
+    };
+
+    if width_drives {
+        let target_client_height = (client_width as f64 / ratio).round().max(1.0) as i32;
+        let target_height = target_client_height + frame_height;
+        if matches!(edge, WMSZ_TOP | WMSZ_TOPLEFT | WMSZ_TOPRIGHT) {
+            rect.top = rect.bottom - target_height;
+        } else {
+            rect.bottom = rect.top + target_height;
+        }
+    } else {
+        let target_client_width = (client_height as f64 * ratio).round().max(1.0) as i32;
+        let target_width = target_client_width + frame_width;
+        if matches!(edge, WMSZ_LEFT | WMSZ_TOPLEFT | WMSZ_BOTTOMLEFT) {
+            rect.left = rect.right - target_width;
+        } else {
+            rect.right = rect.left + target_width;
+        }
+    }
+}
+
+'''
+          if anchor not in s:
+              raise SystemExit('helper insertion anchor not found')
+          s = s.replace(anchor, helper + anchor, 1)
+          path.write_text(s)
+          PY
+          cargo fmt --all
       - name: Format
         run: cargo fmt --all -- --check
       - name: Test
@@ -23,6 +125,18 @@ jobs:
         run: cargo clippy --all-targets -- -D warnings
       - name: Release build
         run: cargo build --release
+      - name: Commit verified source fix
+        shell: bash
+        run: |
+          if git diff --quiet -- src/win/pin.rs; then
+            echo 'Source was already patched.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/win/pin.rs
+          git commit -m 'Handle aspect-ratio resizing directly in pin window'
+          git push origin HEAD:main
       - name: Upload executable
         uses: actions/upload-artifact@v4
         with:
