@@ -3,6 +3,7 @@ mod controller;
 mod menu;
 mod overlay;
 mod pin;
+mod theme;
 mod wide;
 
 use std::io;
@@ -63,6 +64,7 @@ pub fn run() -> io::Result<()> {
         controller::register_class(instance)?;
         overlay::register_class(instance)?;
         pin::register_class(instance)?;
+        theme::install_current_thread_hook();
 
         let controller = controller::create(instance)?;
         let overlay = match overlay::create(instance, controller) {
