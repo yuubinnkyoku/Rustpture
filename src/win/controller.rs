@@ -5,17 +5,23 @@ use std::ptr::{null, null_mut};
 use windows_sys::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, WPARAM};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     CS_DBLCLKS, CreateWindowExW, DefWindowProcW, DestroyWindow, GWLP_USERDATA, GetWindowLongPtrW,
-    IDC_ARROW, IDI_APPLICATION, LoadCursorW, LoadIconW, PostQuitMessage, RegisterClassExW,
-    SetWindowLongPtrW, WM_CLOSE, WM_DESTROY, WM_DISPLAYCHANGE, WM_NCDESTROY, WNDCLASSEXW,
-    WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_POPUP,
+    IDC_ARROW, IDI_APPLICATION, LoadCursorW, LoadIconW, PostMessageW, PostQuitMessage,
+    RegisterClassExW, SetWindowLongPtrW, WM_CLOSE, WM_DESTROY, WM_DISPLAYCHANGE, WM_NCDESTROY,
+    WNDCLASSEXW, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_POPUP,
 };
 
 use super::overlay;
 use super::wide::wide_null;
-use super::{APP_TITLE, CONTROLLER_CLASS, WM_APP_BEGIN_CAPTURE};
+use super::{
+    APP_TITLE, CONTROLLER_CLASS, WM_APP_BEGIN_CAPTURE, WM_APP_CAPTURE_FINISHED, WM_APP_CHECK_IDLE,
+    WM_APP_PIN_CLOSED, WM_APP_PIN_OPENED,
+};
 
 struct ControllerState {
     overlay: HWND,
+    pin_count: usize,
+    capture_active: bool,
+    keep_resident: bool,
 }
 
 #[allow(clippy::manual_dangling_ptr)]
@@ -50,9 +56,9 @@ pub unsafe fn create(instance: HINSTANCE) -> io::Result<HWND> {
     let class_name = wide_null(CONTROLLER_CLASS);
     let title = wide_null(APP_TITLE);
 
-    // The controller only exists for single-instance routing and display-change
-    // notifications. Keeping it as a hidden tool window preserves the warm resident
-    // process without creating a phantom taskbar button after all pin windows close.
+    // The controller is never user-visible. In normal mode it exists only while
+    // capture is active or at least one pinned image window is open. --background
+    // explicitly opts into the old resident behavior.
     let window = CreateWindowExW(
         WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
         class_name.as_ptr(),
@@ -73,8 +79,13 @@ pub unsafe fn create(instance: HINSTANCE) -> io::Result<HWND> {
     Ok(window)
 }
 
-pub unsafe fn attach_state(window: HWND, overlay: HWND) {
-    let state = Box::new(ControllerState { overlay });
+pub unsafe fn attach_state(window: HWND, overlay: HWND, keep_resident: bool) {
+    let state = Box::new(ControllerState {
+        overlay,
+        pin_count: 0,
+        capture_active: false,
+        keep_resident,
+    });
     SetWindowLongPtrW(window, GWLP_USERDATA, Box::into_raw(state) as isize);
 }
 
@@ -87,7 +98,22 @@ unsafe fn begin_capture(window: HWND) {
     if pointer.is_null() {
         return;
     }
+    (*pointer).capture_active = true;
     overlay::begin_capture((*pointer).overlay);
+}
+
+unsafe fn schedule_idle_check(window: HWND) {
+    PostMessageW(window, WM_APP_CHECK_IDLE, 0, 0);
+}
+
+unsafe fn exit_if_idle(window: HWND) {
+    let pointer = state_ptr(window);
+    if pointer.is_null() {
+        return;
+    }
+    if !(*pointer).keep_resident && !(*pointer).capture_active && (*pointer).pin_count == 0 {
+        DestroyWindow(window);
+    }
 }
 
 unsafe extern "system" fn window_proc(
@@ -99,6 +125,35 @@ unsafe extern "system" fn window_proc(
     match message {
         WM_APP_BEGIN_CAPTURE => {
             begin_capture(window);
+            0
+        }
+        WM_APP_PIN_OPENED => {
+            let pointer = state_ptr(window);
+            if !pointer.is_null() {
+                (*pointer).pin_count = (*pointer).pin_count.saturating_add(1);
+            }
+            0
+        }
+        WM_APP_PIN_CLOSED => {
+            let pointer = state_ptr(window);
+            if !pointer.is_null() {
+                (*pointer).pin_count = (*pointer).pin_count.saturating_sub(1);
+            }
+            schedule_idle_check(window);
+            0
+        }
+        WM_APP_CAPTURE_FINISHED => {
+            let pointer = state_ptr(window);
+            if !pointer.is_null() {
+                (*pointer).capture_active = false;
+            }
+            // Defer the idle check until after any pin-open notification posted by
+            // the same selection has been processed.
+            schedule_idle_check(window);
+            0
+        }
+        WM_APP_CHECK_IDLE => {
+            exit_if_idle(window);
             0
         }
         WM_DISPLAYCHANGE => {
