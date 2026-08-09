@@ -6,9 +6,9 @@ use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows_sys::Win32::System::Threading::GetCurrentThreadId;
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     CWPSTRUCT, CallNextHookEx, FindWindowW, GetClassNameW, GetClientRect, GetWindowRect,
-    PostMessageW, SetWindowsHookExW, WH_CALLWNDPROC, WMSZ_BOTTOM, WMSZ_BOTTOMLEFT,
-    WMSZ_BOTTOMRIGHT, WMSZ_LEFT, WMSZ_RIGHT, WMSZ_TOP, WMSZ_TOPLEFT, WMSZ_TOPRIGHT, WM_CREATE,
-    WM_NCDESTROY, WM_SHOWWINDOW, WM_SIZING, WM_WINDOWPOSCHANGED,
+    PostMessageW, SetWindowsHookExW, WH_CALLWNDPROC, WM_CREATE, WM_NCDESTROY, WM_SHOWWINDOW,
+    WM_SIZING, WM_WINDOWPOSCHANGED, WMSZ_BOTTOM, WMSZ_BOTTOMLEFT, WMSZ_BOTTOMRIGHT, WMSZ_LEFT,
+    WMSZ_RIGHT, WMSZ_TOP, WMSZ_TOPLEFT, WMSZ_TOPRIGHT,
 };
 
 use super::wide::wide_null;
@@ -51,11 +51,7 @@ unsafe extern "system" fn call_wnd_proc(code: i32, wparam: WPARAM, lparam: LPARA
                     remember_pin_aspect_ratio(info.hwnd);
                 }
                 WM_SIZING if info.lParam != 0 => {
-                    constrain_pin_sizing(
-                        info.hwnd,
-                        info.wParam as u32,
-                        info.lParam as *mut RECT,
-                    );
+                    constrain_pin_sizing(info.hwnd, info.wParam as u32, info.lParam as *mut RECT);
                 }
                 WM_NCDESTROY => {
                     forget_pin_aspect_ratio(info.hwnd);
@@ -83,7 +79,9 @@ fn aspect_ratios() -> &'static Mutex<HashMap<usize, f64>> {
 
 unsafe fn remember_pin_aspect_ratio(window: HWND) {
     let key = window as usize;
-    let mut ratios = aspect_ratios().lock().unwrap_or_else(|error| error.into_inner());
+    let mut ratios = aspect_ratios()
+        .lock()
+        .unwrap_or_else(|error| error.into_inner());
     if ratios.contains_key(&key) {
         return;
     }
@@ -102,7 +100,9 @@ unsafe fn remember_pin_aspect_ratio(window: HWND) {
 }
 
 fn forget_pin_aspect_ratio(window: HWND) {
-    let mut ratios = aspect_ratios().lock().unwrap_or_else(|error| error.into_inner());
+    let mut ratios = aspect_ratios()
+        .lock()
+        .unwrap_or_else(|error| error.into_inner());
     ratios.remove(&(window as usize));
 }
 
@@ -112,7 +112,9 @@ unsafe fn constrain_pin_sizing(window: HWND, edge: u32, proposed: *mut RECT) {
     }
 
     let ratio = {
-        let ratios = aspect_ratios().lock().unwrap_or_else(|error| error.into_inner());
+        let ratios = aspect_ratios()
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
         ratios.get(&(window as usize)).copied()
     };
     let Some(ratio) = ratio else {
