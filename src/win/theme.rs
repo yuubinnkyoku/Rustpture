@@ -1,9 +1,9 @@
 use std::ffi::c_void;
 use std::mem::size_of;
-use std::ptr::{null, null_mut};
+use std::ptr::null_mut;
 
 use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
-use windows_sys::Win32::Graphics::Dwm::{DWM_SYSTEMBACKDROP_TYPE, DwmSetWindowAttribute};
+use windows_sys::Win32::Graphics::Dwm::DwmSetWindowAttribute;
 use windows_sys::Win32::System::Registry::{HKEY_CURRENT_USER, RRF_RT_REG_DWORD, RegGetValueW};
 use windows_sys::Win32::System::Threading::GetCurrentThreadId;
 use windows_sys::Win32::UI::WindowsAndMessaging::{
@@ -14,15 +14,13 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
 use super::PIN_CLASS;
 use super::wide::wide_null;
 
-// DWMWA_USE_IMMERSIVE_DARK_MODE. windows-sys 0.61 does not expose this value
-// through the same type on every supported SDK, while the documented ABI value
-// is stable on Windows 11.
+// DWMWA_USE_IMMERSIVE_DARK_MODE. The documented ABI value is 20 on Windows 11.
 const DWMWA_USE_IMMERSIVE_DARK_MODE: u32 = 20;
 const CLASS_NAME_CAPACITY: usize = 64;
 
 pub unsafe fn install_current_thread_hook() {
-    // The hook is intentionally process-lifetime. Windows removes thread hooks
-    // automatically when the owning GUI thread exits.
+    // The hook intentionally lives for the GUI thread's entire lifetime. Windows
+    // removes thread hooks automatically when the owning thread exits.
     let _ = unsafe {
         SetWindowsHookExW(
             WH_CALLWNDPROC,
@@ -36,8 +34,10 @@ pub unsafe fn install_current_thread_hook() {
 unsafe extern "system" fn call_wnd_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     if code >= 0 && lparam != 0 {
         let info = unsafe { &*(lparam as *const CWPSTRUCT) };
-        if matches!(info.message, WM_SHOWWINDOW | WM_SETTINGCHANGE | WM_THEMECHANGED)
-            && unsafe { is_pin_window(info.hwnd) }
+        if matches!(
+            info.message,
+            WM_SHOWWINDOW | WM_SETTINGCHANGE | WM_THEMECHANGED
+        ) && unsafe { is_pin_window(info.hwnd) }
         {
             unsafe { apply_title_bar_theme(info.hwnd) };
         }
