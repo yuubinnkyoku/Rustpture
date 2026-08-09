@@ -4,7 +4,7 @@ use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
 use windows_sys::Win32::System::Threading::GetCurrentThreadId;
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     CWPSTRUCT, CallNextHookEx, FindWindowW, GetClassNameW, PostMessageW, SetWindowsHookExW,
-    WH_CALLWNDPROC, WM_NCDESTROY, WM_SHOWWINDOW,
+    WH_CALLWNDPROC, WM_CREATE, WM_NCDESTROY, WM_SHOWWINDOW,
 };
 
 use super::wide::wide_null;
@@ -32,7 +32,12 @@ unsafe extern "system" fn call_wnd_proc(code: i32, wparam: WPARAM, lparam: LPARA
         let class = window_class(info.hwnd);
 
         if class.as_deref() == Some(PIN_CLASS) {
-            if info.message == WM_SHOWWINDOW && info.wParam != 0 {
+            // Count a pin as soon as CreateWindowExW reaches WM_CREATE. A pin can
+            // become visible through SetWindowPos(..., SWP_SHOWWINDOW) without a
+            // dependable WM_SHOWWINDOW notification, which previously left
+            // pin_count at zero and made the controller exit immediately after
+            // a successful capture.
+            if info.message == WM_CREATE {
                 notify_controller(WM_APP_PIN_OPENED);
             } else if info.message == WM_NCDESTROY {
                 notify_controller(WM_APP_PIN_CLOSED);
