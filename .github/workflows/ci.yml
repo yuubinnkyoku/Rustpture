@@ -23,7 +23,7 @@ jobs:
           python - <<'PY'
           from pathlib import Path
           path = Path('src/win/pin.rs')
-          lines = path.read_text().splitlines()
+          lines = path.read_text(encoding='utf-8').splitlines()
           if any('WM_SIZING =>' in line for line in lines):
               raise SystemExit(0)
 
@@ -110,7 +110,7 @@ jobs:
           else:
               raise SystemExit('helper insertion anchor not found')
 
-          path.write_text('\n'.join(lines) + '\n')
+          path.write_text('\n'.join(lines) + '\n', encoding='utf-8')
           PY
           cargo fmt --all
       - name: Format
