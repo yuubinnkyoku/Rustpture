@@ -6,9 +6,10 @@ use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows_sys::Win32::System::Threading::GetCurrentThreadId;
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     CWPSTRUCT, CallNextHookEx, FindWindowW, GetClassNameW, GetClientRect, GetWindowRect,
-    PostMessageW, SetWindowsHookExW, WH_CALLWNDPROC, WM_CREATE, WM_NCDESTROY, WM_SHOWWINDOW,
-    WM_SIZING, WM_WINDOWPOSCHANGED, WMSZ_BOTTOM, WMSZ_BOTTOMLEFT, WMSZ_BOTTOMRIGHT, WMSZ_LEFT,
-    WMSZ_RIGHT, WMSZ_TOP, WMSZ_TOPLEFT, WMSZ_TOPRIGHT,
+    PostMessageW, SWP_NOSIZE, SetWindowsHookExW, WH_CALLWNDPROC, WINDOWPOS, WM_CREATE,
+    WM_NCDESTROY, WM_SHOWWINDOW, WM_SIZING, WM_WINDOWPOSCHANGED, WM_WINDOWPOSCHANGING,
+    WMSZ_BOTTOM, WMSZ_BOTTOMLEFT, WMSZ_BOTTOMRIGHT, WMSZ_LEFT, WMSZ_RIGHT, WMSZ_TOP,
+    WMSZ_TOPLEFT, WMSZ_TOPRIGHT,
 };
 
 use super::wide::wide_null;
@@ -43,6 +44,12 @@ unsafe extern "system" fn call_wnd_proc(code: i32, wparam: WPARAM, lparam: LPARA
                     // aspect ratio before the user can resize or maximize it.
                     notify_controller(WM_APP_PIN_OPENED);
                     remember_pin_aspect_ratio(info.hwnd);
+                }
+                WM_WINDOWPOSCHANGING if info.lParam != 0 => {
+                    // Catch non-drag resizes too: maximize, Snap layouts and any other
+                    // SetWindowPos-based path. The window itself is fitted inside the
+                    // proposed bounds, so the image never needs letterboxing or crop.
+                    constrain_pin_windowpos(info.hwnd, info.lParam as *mut WINDOWPOS);
                 }
                 WM_WINDOWPOSCHANGED => {
                     // WM_CREATE can arrive before the final client geometry exists on
@@ -99,6 +106,13 @@ unsafe fn remember_pin_aspect_ratio(window: HWND) {
     ratios.insert(key, width as f64 / height as f64);
 }
 
+fn pin_aspect_ratio(window: HWND) -> Option<f64> {
+    let ratios = aspect_ratios()
+        .lock()
+        .unwrap_or_else(|error| error.into_inner());
+    ratios.get(&(window as usize)).copied()
+}
+
 fn forget_pin_aspect_ratio(window: HWND) {
     let mut ratios = aspect_ratios()
         .lock()
@@ -106,33 +120,78 @@ fn forget_pin_aspect_ratio(window: HWND) {
     ratios.remove(&(window as usize));
 }
 
+unsafe fn current_frame_size(window: HWND) -> Option<(i32, i32)> {
+    let mut outer: RECT = std::mem::zeroed();
+    let mut client: RECT = std::mem::zeroed();
+    if GetWindowRect(window, &mut outer) == 0 || GetClientRect(window, &mut client) == 0 {
+        return None;
+    }
+
+    Some((
+        (outer.right - outer.left) - (client.right - client.left),
+        (outer.bottom - outer.top) - (client.bottom - client.top),
+    ))
+}
+
+unsafe fn constrain_pin_windowpos(window: HWND, proposed: *mut WINDOWPOS) {
+    if proposed.is_null() {
+        return;
+    }
+    let position = &mut *proposed;
+    if position.flags & SWP_NOSIZE != 0 || position.cx <= 0 || position.cy <= 0 {
+        return;
+    }
+
+    let Some(ratio) = pin_aspect_ratio(window) else {
+        return;
+    };
+    if !ratio.is_finite() || ratio <= 0.0 {
+        return;
+    }
+    let Some((frame_width, frame_height)) = current_frame_size(window) else {
+        return;
+    };
+
+    let available_client_width = (position.cx - frame_width).max(1);
+    let available_client_height = (position.cy - frame_height).max(1);
+    let available_ratio = available_client_width as f64 / available_client_height as f64;
+
+    let (client_width, client_height) = if available_ratio > ratio {
+        (
+            (available_client_height as f64 * ratio).round().max(1.0) as i32,
+            available_client_height,
+        )
+    } else {
+        (
+            available_client_width,
+            (available_client_width as f64 / ratio).round().max(1.0) as i32,
+        )
+    };
+
+    let target_width = client_width + frame_width;
+    let target_height = client_height + frame_height;
+    position.x += (position.cx - target_width) / 2;
+    position.y += (position.cy - target_height) / 2;
+    position.cx = target_width;
+    position.cy = target_height;
+}
+
 unsafe fn constrain_pin_sizing(window: HWND, edge: u32, proposed: *mut RECT) {
     if proposed.is_null() {
         return;
     }
 
-    let ratio = {
-        let ratios = aspect_ratios()
-            .lock()
-            .unwrap_or_else(|error| error.into_inner());
-        ratios.get(&(window as usize)).copied()
-    };
-    let Some(ratio) = ratio else {
+    let Some(ratio) = pin_aspect_ratio(window) else {
         remember_pin_aspect_ratio(window);
         return;
     };
     if !ratio.is_finite() || ratio <= 0.0 {
         return;
     }
-
-    let mut outer: RECT = std::mem::zeroed();
-    let mut client: RECT = std::mem::zeroed();
-    if GetWindowRect(window, &mut outer) == 0 || GetClientRect(window, &mut client) == 0 {
+    let Some((frame_width, frame_height)) = current_frame_size(window) else {
         return;
-    }
+    };
 
-    let frame_width = (outer.right - outer.left) - (client.right - client.left);
-    let frame_height = (outer.bottom - outer.top) - (client.bottom - client.top);
     let rect = &mut *proposed;
     let client_width = ((rect.right - rect.left) - frame_width).max(1);
     let client_height = ((rect.bottom - rect.top) - frame_height).max(1);
